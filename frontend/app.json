@@ -14,7 +14,10 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "web": {},
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
     "plugins": [
       "expo-router",
       "expo-web-browser",
