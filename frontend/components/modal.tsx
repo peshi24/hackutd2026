@@ -30,9 +30,9 @@ export const Popup = ({
 
     // Store the button options if the user is in the location from the database
     const options = [
-        { label: "I need immediate care", value: "help" },
-        { label: "I need some help", value: "okay" },
-        { label: "I'm fine", value: "unsure" },
+        { label: "I need immediate care", value: "urgent" },
+        { label: "I need some help", value: "need help" },
+        { label: "I'm fine", value: "okay" },
     ];
 
     return (

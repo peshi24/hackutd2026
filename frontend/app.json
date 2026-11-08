@@ -14,10 +14,14 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "web": {},
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
     "plugins": [
       "expo-router",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "scheme": "neighboralert"
   }

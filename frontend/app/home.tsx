@@ -2,19 +2,21 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Popup } from '../components/modal';
-import { Chat } from './chat';
+import ShowLocations from './showLocations';
 
 export default function Home() {
-    const [showChat, setShowChat] = useState(false);
+    const [showLocation, setshowLocation] = useState(false);
 
     // Handles the user's selection
     const handleOptionPress = (option: string) => {
         console.log("User selected:", option);
-        setShowChat(true);
+        if(option == "need help" || option == "urgent") {
+            setshowLocation(true);
+        }
     };
 
-    if (showChat) {
-        return <Chat />;
+    if (showLocation) {
+        return <ShowLocations onSelectionComplete={() => {}} />;
     }
 
     return (
@@ -22,7 +24,7 @@ export default function Home() {
             <Popup
                 isOpen={true}
                 onOptionPress={handleOptionPress}
-                onClose={() => setShowChat(true)}
+                onClose={() => setshowLocation(true)}
             />
         </View>
     );
