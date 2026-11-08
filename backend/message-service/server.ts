@@ -14,11 +14,21 @@ console.log("Photon Spectrum agent running...");
 
 for await (const [space, message] of app.messages) {
   if (message.content.type === "text") {
+    const userId = message.sender?.id ?? "unknown_user";
     const incomingText = message.content.text;
-    console.log(`[Disaster SMS Received] From ${message.sender?.id}: "${incomingText}"`);
+    
+    console.log(`[SMS Received] From ${userId}: "${incomingText}"`);
 
-    const replyText = await getDisasterResponse(incomingText);
-    // Reply instantly back to the sender
-    await message.reply(replyText);
+    // TODO: Save incoming message to your Messages Database here
+
+    // Get response and notes from the persistent per-user Gemini session
+    const { user_message, session_notes } = await getDisasterResponse(userId, incomingText);
+
+    // TODO: Save outgoing 'user_message' to your Messages Database here
+    // TODO: Upsert/save 'session_notes' into your Notes Database for this user session
+
+    // Reply back to the user over SMS
+    await message.reply(user_message);
+    console.log(`[SMS Sent] To ${userId}: "${user_message}" | [Notes Updated]: ${session_notes}`);
   }
 }
