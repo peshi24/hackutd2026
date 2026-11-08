@@ -30,6 +30,34 @@ export const AssistanceRequest = __t.object("AssistanceRequest", {
 });
 export type AssistanceRequest = __Infer<typeof AssistanceRequest>;
 
+export const Broadcast = __t.object("Broadcast", {
+  id: __t.string(),
+  disasterId: __t.u64(),
+  latitude: __t.f64(),
+  longitude: __t.f64(),
+  radiusKm: __t.u32(),
+  maxLocationAgeHours: __t.u32(),
+  content: __t.string(),
+  serviceIdentity: __t.identity(),
+  createdBy: __t.identity(),
+  createdAt: __t.timestamp(),
+});
+export type Broadcast = __Infer<typeof Broadcast>;
+
+export const BroadcastDelivery = __t.object("BroadcastDelivery", {
+  id: __t.string(),
+  broadcastId: __t.string(),
+  userId: __t.u64(),
+  phone: __t.string(),
+  sessionId: __t.option(__t.string()),
+  status: __t.string(),
+  attempt: __t.u32(),
+  providerMessageId: __t.option(__t.string()),
+  error: __t.option(__t.string()),
+  updatedAt: __t.timestamp(),
+});
+export type BroadcastDelivery = __Infer<typeof BroadcastDelivery>;
+
 export const Disaster = __t.object("Disaster", {
   id: __t.u64(),
   name: __t.string(),
@@ -92,6 +120,9 @@ export type Message = __Infer<typeof Message>;
 export const MyMessages = __t.object("MyMessages", {});
 export type MyMessages = __Infer<typeof MyMessages>;
 
+export const MyOutreachPreference = __t.object("MyOutreachPreference", {});
+export type MyOutreachPreference = __Infer<typeof MyOutreachPreference>;
+
 export const MyProfile = __t.object("MyProfile", {});
 export type MyProfile = __Infer<typeof MyProfile>;
 
@@ -102,6 +133,13 @@ export const Organization = __t.object("Organization", {
   fictional: __t.bool(),
 });
 export type Organization = __Infer<typeof Organization>;
+
+export const OutreachPreference = __t.object("OutreachPreference", {
+  userId: __t.u64(),
+  smsOptIn: __t.bool(),
+  updatedAt: __t.timestamp(),
+});
+export type OutreachPreference = __Infer<typeof OutreachPreference>;
 
 export const RequestReview = __t.object("RequestReview", {
   requestId: __t.u64(),
@@ -166,8 +204,23 @@ export const User = __t.object("User", {
 });
 export type User = __Infer<typeof User>;
 
+export const UserLocation = __t.object("UserLocation", {
+  userId: __t.u64(),
+  latitude: __t.f64(),
+  longitude: __t.f64(),
+  source: __t.string(),
+  updatedAt: __t.timestamp(),
+});
+export type UserLocation = __Infer<typeof UserLocation>;
+
 export const VisibleAssignments = __t.object("VisibleAssignments", {});
 export type VisibleAssignments = __Infer<typeof VisibleAssignments>;
+
+export const VisibleBroadcastDeliveries = __t.object("VisibleBroadcastDeliveries", {});
+export type VisibleBroadcastDeliveries = __Infer<typeof VisibleBroadcastDeliveries>;
+
+export const VisibleBroadcasts = __t.object("VisibleBroadcasts", {});
+export type VisibleBroadcasts = __Infer<typeof VisibleBroadcasts>;
 
 export const VisibleIntakeMessages = __t.object("VisibleIntakeMessages", {});
 export type VisibleIntakeMessages = __Infer<typeof VisibleIntakeMessages>;
@@ -183,6 +236,9 @@ export type VisibleRequests = __Infer<typeof VisibleRequests>;
 
 export const VisibleResources = __t.object("VisibleResources", {});
 export type VisibleResources = __Infer<typeof VisibleResources>;
+
+export const VisibleUserLocations = __t.object("VisibleUserLocations", {});
+export type VisibleUserLocations = __Infer<typeof VisibleUserLocations>;
 
 export const VisibleUsers = __t.object("VisibleUsers", {});
 export type VisibleUsers = __Infer<typeof VisibleUsers>;
