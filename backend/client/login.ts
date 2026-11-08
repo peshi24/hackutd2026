@@ -23,6 +23,9 @@ export function connectExistingAccount(options: {
     .withUri(options.uri)
     .withDatabaseName(options.database)
     .withToken(options.idToken)
+    .withCompression(
+      typeof DecompressionStream === "undefined" ? "none" : "gzip",
+    )
     .onConnect((conn) => {
       void conn.reducers
         .loginExistingUser({})
