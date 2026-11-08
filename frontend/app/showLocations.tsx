@@ -14,7 +14,6 @@ import {
     Platform,
 } from "react-native";
 
-import MapView, { Marker } from "react-native-maps";
 import * as Location from "expo-location";
 
 // Get screen dimensions
@@ -394,44 +393,14 @@ export default function ShowLocations({
                 </Text>
             </View>
 
-            {/* Map showing ALL trailer locations */}
+            {/* Temporary map bypass: keep the native maps module out of the bundle.
+                The location cards below still support selecting a trailer. */}
             <View style={styles.mapContainer}>
-
-                <MapView
-                    style={styles.map}
-                    initialRegion={{
-                        latitude: userLocation.latitude,
-                        longitude: userLocation.longitude,
-                        latitudeDelta: 0.08,
-                        longitudeDelta: 0.08,
-                    }}
-                    showsUserLocation
-                    showsMyLocationButton
-                >
-
-                    {/* User marker is provided by showsUserLocation */}
-                    {nearbyTrailers.map((trailer) => (
-
-                        <Marker
-                            key={trailer.id}
-                            coordinate={{
-                                latitude: trailer.latitude,
-                                longitude: trailer.longitude,
-                            }}
-                            title={`Trailer ${trailer.id}`}
-                            description={`${trailer.available} spaces available`}
-                            pinColor={
-                                selectedTrailer === trailer.id
-                                    ? "#3978B8"
-                                    : "#C62828"
-                            }
-                            onPress={() => handleSelect(trailer.id)}
-                        />
-
-                    ))}
-
-                </MapView>
-
+                <View style={[styles.map, { justifyContent: "center", alignItems: "center", padding: 20 }]}>
+                    <Text style={styles.text}>
+                        Map preview is temporarily unavailable. Select a location below.
+                    </Text>
+                </View>
             </View>
 
             {/* Location cards section */}
