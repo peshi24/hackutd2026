@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import { connectExistingAccount } from "../../backend/client/login";
+import type { AccountProfile } from "../../backend/client/module_bindings/types";
 
 WebBrowser.maybeCompleteAuthSession();
 const issuer = "https://auth.spacetimedb.com/oidc";
@@ -9,7 +10,9 @@ const clientId = process.env.EXPO_PUBLIC_SPACETIMEAUTH_CLIENT_ID ?? "";
 export const redirectUri = AuthSession.makeRedirectUri({ scheme: "neighboralert", path: "callback" });
 type AccountSession = ReturnType<typeof connectExistingAccount>;
 type AuthState = {
-  email: string; setEmail: (email: string) => void;
+  user: AccountProfile | null;
+  email: string;
+  setEmail: (email: string) => void;
   busy: boolean; ready: boolean; error: string | null;
   connection: AccountSession["connection"] | null;
   signIn: () => Promise<void>;
@@ -17,6 +20,7 @@ type AuthState = {
 const Context = createContext<AuthState | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<AccountProfile | null>(null);
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(clientId ? null : "Sign-in is not configured yet. Please contact the app team.");
@@ -38,7 +42,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [request, , promptAsync] = AuthSession.useAuthRequest({
     clientId, redirectUri, responseType: AuthSession.ResponseType.Code,
     scopes: ["openid", "profile", "email"], usePKCE: true,
-    extraParams: { login_hint: email.trim().toLowerCase(), prompt: "login" },
+    extraParams: { prompt: "login", ...(email.trim() ? { login_hint: email.trim().toLowerCase() } : {}) },
   }, clientId ? discovery : null);
 
   useEffect(() => () => {
@@ -49,9 +53,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   async function signIn() {
     if (pending.current) return;
     if (!clientId) { setError("Sign-in is not configured yet. Please contact the app team."); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError("Please enter a valid email address."); return;
-    }
     if (!request || !discovery) { setError("Sign-in is still loading. Please try again."); return; }
     pending.current = true;
     setBusy(true);
@@ -60,7 +61,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       // Called directly from the button so browsers can open the auth popup.
       const result = await promptAsync();
       if (result.type === "cancel" || result.type === "dismiss") {
-        setError("Sign-in cancelled. Submit again to retry."); return;
+        setError("Sign-in cancelled. Select Sign in to retry."); return;
       }
       if (result.type !== "success" || !result.params.code || !request.codeVerifier)
         throw new Error("Sign-in could not be completed. Please try again.");
@@ -99,7 +100,22 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
       setBusy(false);
     }
   }
-  return <Context.Provider value={{ email, setEmail, busy, error, connection,
+  useEffect(() => {
+    if (!connection) { setUser(null); return; }
+    const table = connection.db.myProfile;
+    const updateUser = () => setUser([...table.iter()][0] ?? null);
+    updateUser();
+    table.onInsert(updateUser);
+    table.onUpdate(updateUser);
+    table.onDelete(updateUser);
+    return () => {
+      table.removeOnInsert(updateUser);
+      table.removeOnUpdate(updateUser);
+      table.removeOnDelete(updateUser);
+    };
+  }, [connection]);
+
+  return <Context.Provider value={{ user: connection ? user : null, email, setEmail, busy, error, connection,
     ready: !!clientId && !!request && !!discovery, signIn }}>{children}</Context.Provider>;
 }
 export function useSession() {

@@ -33,24 +33,23 @@ export default function Login() {
             >
                 {/* Main login content */}
                 <View style={styles.content}>
-                    {/* Email input */}
                     <TextInput
                         style={styles.input}
                         value={email}
                         onChangeText={setEmail}
-                        placeholder="Enter Email Address"
+                        placeholder="Email address (optional)"
                         placeholderTextColor="#888"
+                        accessibilityLabel="Email address (optional)"
                         keyboardType="email-address"
                         autoCapitalize="none"
                         autoCorrect={false}
                         editable={!busy}
                     />
-
                     {error ? <Text accessibilityRole="alert" style={{ color: "white", marginBottom: 12 }}>{error}</Text> : null}
                     <Text style={{ color: "white", marginBottom: 12 }}>
-                        {busy ? "Complete email sign-in in the browser, then return here." : !ready ? "Waiting for sign-in configuration or connection?" : "Continue to secure email sign-in."}
+                        {busy ? "Complete email sign-in in the browser, then return here." : !ready ? "Loading sign-in..." : "Continue to secure email sign-in."}
                     </Text>
-                    {/* Submit button */}
+                    {/* Hosted sign-in button */}
                     <TouchableOpacity
                         style={styles.button}
                         onPress={() => void signIn()}
@@ -58,7 +57,7 @@ export default function Login() {
                         accessibilityState={{ disabled: busy || !ready, busy }}
                     >
                         <Text style={styles.buttonText}>
-                            {busy ? "Signing in?" : "Submit"}
+                            {busy ? "Signing in..." : "Submit"}
                         </Text>
                     </TouchableOpacity>
 
@@ -133,7 +132,7 @@ const styles = StyleSheet.create({
         textAlign: "center",
     },
 
-    // Email input field
+    // Submit button
     input: {
         width: "100%",
         height: 50,
@@ -147,7 +146,6 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
 
-    // Submit button
     button: {
         width: "100%",
         height: 50,

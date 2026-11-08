@@ -2,16 +2,16 @@
 
 1. Copy `.env.example` to `.env.local`; set the public SpacetimeAuth client ID and database name. Never include a client secret. The backend must have the same `SPACETIMEAUTH_CLIENT_ID` and a prepopulated account for the email.
 2. Enable email magic-link login in SpacetimeAuth. Register these exact callback URLs on its client:
-   - Native development/production build: `neighboralert://callback`.
+   - Native callback is currently blocked: the SpacetimeAuth dashboard rejected `neighboralert://callback`. Native login needs a supported HTTPS app-link setup before it can be tested.
    - Local web: `http://localhost:8081/callback` (match the actual host/port).
    - Hosted web: `https://YOUR-HOST/callback`.
-3. Restart Expo after environment changes. Native login needs a development build with the new `neighboralert` scheme and installed native packages, not Expo Go. Rebuild after changing the scheme.
+3. Restart Expo after environment changes. Use the browser flow for now. Native login remains blocked on configuring a provider-supported callback; Expo Go is not a workaround.
 
-Submit starts the documented hosted OIDC login with PKCE. The email is sent as a `login_hint`, not authorization. Select/confirm email magic-link sign-in on the hosted page; SpacetimeAuth sends the email. Its UI may ask for the email again. There is no undocumented direct-send endpoint in this implementation.
+Submit opens SpacetimeAuth's hosted OIDC login with PKCE. The app's email field is optional: when supplied, it is passed as a login hint. SpacetimeAuth may still ask for the email on its page and sends the magic link there. Leaving the app's email field blank does not block sign-in.
 
 After the link returns, the app exchanges the code with the original PKCE verifier and passes the ID token to `backend/client/login.ts`. The backend verifies the email/account/role. Only after account verification and subscriptions succeed does routing open `/home`. Unknown accounts show `No account found for this email.` Cancellation/errors allow retry. No account is created by login.
 
-Routes now live in `src/app`; wrappers reuse existing screens under `app`. The session provider exposes the connection through `useSession()`. Existing chat/location fixture content is unchanged.
+Routes now live in `src/app`; wrappers reuse existing screens under `app`. The session provider exposes the connection and authenticated database profile through `useSession()`: `const { user, connection } = useSession()`. `user` contains the existing account ID, name, identity and role; it is read from the backend-scoped `myProfile` subscription, not from form input. Profile changes update the context, and disconnect/expiry clears it. Email remains private backend lookup data. Existing chat/location fixture content is unchanged.
 
 ## Test
 
