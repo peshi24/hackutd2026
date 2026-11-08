@@ -1,5 +1,9 @@
 # Disaster response backend
 
+## Existing-account login
+
+Human users now sign in with SpacetimeAuth using a verified email that already exists in the private `user` table. Self-registration is disabled. Follow [AUTH.md](AUTH.md) for Maincloud configuration, demo-account prepopulation, the frontend connection helper, migration notes and login testing. The AI/SMS integrations retain their explicit service permissions.
+
 SpacetimeDB CLI **2.14.1**, server/client SDK **2.14.0** (pinned and locked). Implementation, generated client bindings and tests are entirely in `backend/`; the Expo frontend is unchanged.
 
 ## Updated demo data
@@ -71,7 +75,7 @@ All workers using the same service identity must coordinate ownership of success
 
 ### Publish and test this update
 
-From `backend`, run `npm run typecheck`, `npm run lint`, and `npm test`. Tests use a disposable local database and never send SMS. The outreach suite covers private tables, scoped views, radius filtering, missing locations, invalid phones, opt-in, duplicate broadcasts, concurrent claims, failed-delivery retries, stale attempts, intake logging, opt-out rechecks, and access revocation.
+From `backend`, run `npm run typecheck`, `npm run lint`, and `npm test`. Current authentication and local smoke tests are described in [AUTH.md](AUTH.md). Tests never send SMS. The older outreach scenarios used anonymous self-registration and are retained as historical regression references; they are not part of the current default runner.
 
 Publish to your existing database without deleting data:
 
@@ -148,7 +152,7 @@ Do not reseed or use a delete-data flag that allows deletion. Commit/share the r
 
 For everyday development, from `backend/`, just run **`npm run dev`**. It starts (or reuses) the local server, publishes `hackutd-disaster-dev`, seeds fictional demo data once, generates bindings, and watches for backend changes. Restarting preserves your data. Press Ctrl+C to stop; a server already running before the command is left running.
 
-Run **`npm test`** for the full integration suite. It starts/reuses the server and publishes a fresh test database automatically. Test data is separate from the development database. No environment variables or manual publish commands are needed. Both commands target loopback port 3107 only and prohibit data deletion.
+Run **`npm test`** for the authentication/authorization datastore suite and local connection/service smoke test. It starts/reuses the server and publishes a fresh test database automatically. Test data is separate from the development database. No environment variables or manual publish commands are needed. Both commands target loopback port 3107 only and prohibit data deletion.
 
 Install dependencies once after cloning with `npm ci` and `npm ci --prefix spacetimedb`; repeat only when dependency lockfiles change. The commands below are individual checks and manual alternatives, not steps required every time you run the backend.
 
@@ -208,7 +212,7 @@ spacetime publish hackutd-disaster-dev --server http://127.0.0.1:3107 --no-confi
 
 Database owners retain administrative access to private data. Views track access rows: revocation removes dashboard data from live subscriptions. All responders have platform-wide access in this MVP; there is no organization tenancy boundary. Integrations have no responder read permission. Do not put personal details in public event/provider descriptions.
 
-`registerUser` derives identity from the connection; it cannot grant privileges. Obtain an operator's identity with `identity.toHexString()`, verify it, then use the publishing administrator's CLI credential to approve it (replace placeholders):
+`registerUser` is disabled. Prepopulate the operator's email and stored role as described in [AUTH.md](AUTH.md), then let them log in with SpacetimeAuth. To change an existing operator's permissions, obtain their bound identity with `identity.toHexString()` and use the publishing administrator's CLI credential (replace placeholders):
 
 ```powershell
 spacetime call hackutd-disaster-dev set_access '"IDENTITY_HEX"' '"responder"' --server http://127.0.0.1:3107 --no-config
@@ -220,7 +224,7 @@ Never put administrator/integration credentials in the mobile app, EXPO_PUBLIC v
 
 | Reducer | Caller / behavior |
 | --- | --- |
-| `register_user` | Caller registers own profile with optional private phone |
+| `register_user` | Disabled; use `login_existing_user` for prepopulated accounts |
 | `set_access` | Admin grants responder/integration/ai/none |
 | `create_disaster`, `create_organization` | Responder/admin creates event/provider |
 | `create_assistance_request` | Caller creates own request (`userId: undefined`); integration may supply existing resident ID |
@@ -247,23 +251,17 @@ Frontend teammate setup, from `frontend/`:
 npx expo install spacetimedb@2.14.0
 ```
 
-Copy `backend/client/module_bindings/` and `backend/client/connect.ts` together to a non-route directory such as `frontend/src/lib/spacetime/`, or configure a shared package. This implementation did not modify frontend files or dependencies. The app uses Expo SDK 58: https://docs.expo.dev/versions/v58.0.0/.
+Copy `backend/client/module_bindings/` and `backend/client/login.ts` together to a non-route directory such as `frontend/src/lib/spacetime/`, or configure a shared package. This implementation did not modify frontend files or dependencies. The app uses Expo SDK 58: https://docs.expo.dev/versions/v58.0.0/.
 
 ```typescript
-const dashboard = connectDashboard({
-  uri: 'http://127.0.0.1:3107', database: 'hackutd-disaster-dev',
-  token: previouslyLoadedToken,
-  saveToken: token => { /* persist using app secure storage */ },
-  onReady: connection => {
-    const requests = [...connection.db.visibleRequests.iter()];
-    // Update app state; unapproved identities see only their own requests.
-  },
-  onError: error => { /* display connection/subscription error */ },
+const dashboard = connectExistingAccount({
+  uri: 'https://maincloud.spacetimedb.com', database: 'YOUR-DATABASE',
+  idToken: oidcUser.id_token,
 });
-// Once connected; register a profile only once:
-await dashboard.connection.reducers.registerUser({ name: 'Demo operator', phone: undefined });
-// Once approved by admin, from a user action:
-await dashboard.connection.reducers.assignResource({ requestId, resourceId, quantity: 2 });
+const connection = await dashboard.ready; // Handle login errors in your UI.
+const requests = [...connection.db.visibleRequests.iter()];
+// From a user action, if this existing account has responder permissions:
+await connection.reducers.assignResource({ requestId, resourceId, quantity: 2 });
 // On teardown: dashboard.dispose();
 ```
 

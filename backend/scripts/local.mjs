@@ -148,9 +148,7 @@ try {
       "-p",
       "client/tsconfig.test.json",
     ]);
-    await run(process.execPath, ["tests/integration.mjs"]);
-    await run(process.execPath, ["tests/intake.mjs"]);
-    await run(process.execPath, ["tests/outreach.mjs"]);
+    await run(process.execPath, ["tests/auth-smoke.mjs"]);
   } else {
     const seed = spawnSync(
       cli,

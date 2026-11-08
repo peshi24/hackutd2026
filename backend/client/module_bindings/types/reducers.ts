@@ -18,6 +18,8 @@ import CreateOrganizationReducer from "../create_organization_reducer";
 import CreateResourceReducer from "../create_resource_reducer";
 import FinishBroadcastDeliveryReducer from "../finish_broadcast_delivery_reducer";
 import InitializeRequestReviewsReducer from "../initialize_request_reviews_reducer";
+import LoginExistingUserReducer from "../login_existing_user_reducer";
+import PrepopulateDemoAccountReducer from "../prepopulate_demo_account_reducer";
 import QueueBroadcastReducer from "../queue_broadcast_reducer";
 import RegisterIntegrationResidentReducer from "../register_integration_resident_reducer";
 import RegisterUserReducer from "../register_user_reducer";
@@ -48,6 +50,8 @@ export type CreateOrganizationParams = __Infer<typeof CreateOrganizationReducer>
 export type CreateResourceParams = __Infer<typeof CreateResourceReducer>;
 export type FinishBroadcastDeliveryParams = __Infer<typeof FinishBroadcastDeliveryReducer>;
 export type InitializeRequestReviewsParams = __Infer<typeof InitializeRequestReviewsReducer>;
+export type LoginExistingUserParams = __Infer<typeof LoginExistingUserReducer>;
+export type PrepopulateDemoAccountParams = __Infer<typeof PrepopulateDemoAccountReducer>;
 export type QueueBroadcastParams = __Infer<typeof QueueBroadcastReducer>;
 export type RegisterIntegrationResidentParams = __Infer<typeof RegisterIntegrationResidentReducer>;
 export type RegisterUserParams = __Infer<typeof RegisterUserReducer>;
