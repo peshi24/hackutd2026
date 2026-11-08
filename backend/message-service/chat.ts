@@ -1,6 +1,14 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
 import path from "node:path";
+import { DbConnection } from "../client/module_bindings";
+
+export const conn = DbConnection.builder()
+  .withUri(process.env.SPACETIME_URI || "http://127.0.0.1:3000")
+  .withDatabaseName(process.env.SPACETIME_DB || "local")
+  .withToken(process.env.SPACETIME_TOKEN)
+  .withAutomaticReconnect()
+  .build();
 
 dotenv.config({
   path: path.resolve(process.cwd(), ".env"),
@@ -360,3 +368,39 @@ export function loadDisasterSessionNotes(userId: string, notes: string): void {
  * Optional helper for saving notes to your database after each response.
  * In production, persist result.session_notes in your existing Notes DB.
  */
+async function persistToSpacetimeDB(
+  userId: string,
+  userText: string,
+  aiResponseText: string,
+  sessionNotes: string,
+  conversationId?: bigint,
+): Promise<void> {
+  try {
+    const session = getSession(userId);
+    session.notes = sessionNotes;
+    sessions.set(userId, session);
+
+    if (conversationId !== undefined) {
+      // The generated module includes `saveMessage`, not `addMessage`.
+      // `saveSessionNotes` is not a reducer in the existing schema.
+      await conn.reducers.saveMessage({
+        conversationId,
+        recipientId: 1n,
+        senderId: BigInt(userId),
+        channel: "app",
+        content: userText,
+      });
+
+      await conn.reducers.saveMessage({
+        conversationId,
+        recipientId: BigInt(userId),
+        channel: "app",
+        content: aiResponseText,
+      });
+    }
+
+    console.info(`[spacetime-db] Persisted chat turn(s) for user=${userId}`);
+  } catch (dbError) {
+    console.error(`[spacetime-db] Failed to persist data for user=${userId}:`, dbError);
+  }
+}
