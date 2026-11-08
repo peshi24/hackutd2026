@@ -80,6 +80,8 @@ async function until(predicate) {
 try {
   call("seed_development");
   call("seed_development", [], false);
+  call("seed_updated_development");
+  call("seed_updated_development");
   const resident = await connect();
   await resident.conn.reducers.registerUser({
     name: "Test Resident",
@@ -91,6 +93,12 @@ try {
     tables.visibleResources,
     tables.visibleUsers,
     tables.myMessages,
+    tables.visibleUserLocations,
+    tables.visibleIntakeSessions,
+    tables.visibleIntakeMessages,
+    tables.visibleRequestReviews,
+    tables.visibleBroadcasts,
+    tables.visibleBroadcastDeliveries,
     tables.disaster,
   ]);
   assert.equal(resident.conn.db.visibleRequests.count(), 0n);
@@ -126,6 +134,32 @@ try {
   assert.equal(a.conn.db.visibleResources.count(), 20n);
   assert.equal(a.conn.db.organization.count(), 5n);
   assert.equal(a.conn.db.disaster.count(), 1n);
+  await subscribe(a.conn, [
+    tables.visibleUserLocations,
+    tables.visibleIntakeSessions,
+    tables.visibleIntakeMessages,
+    tables.visibleRequestReviews,
+    tables.visibleBroadcasts,
+    tables.visibleBroadcastDeliveries,
+  ]);
+  assert.equal(a.conn.db.visibleUserLocations.count(), 10n);
+  assert.equal(a.conn.db.visibleIntakeSessions.count(), 10n);
+  assert.equal(a.conn.db.visibleIntakeMessages.count(), 20n);
+  assert.equal(a.conn.db.visibleRequestReviews.count(), 10n);
+  assert.equal(a.conn.db.visibleBroadcasts.count(), 1n);
+  assert.equal(a.conn.db.visibleBroadcastDeliveries.count(), 10n);
+  assert.ok(
+    [...a.conn.db.visibleBroadcastDeliveries.iter()].every(
+      (d) => d.status === "sent",
+    ),
+  );
+  assert.ok(
+    [...a.conn.db.visibleRequests.iter()].every(
+      (r) => !r.needs.includes("SIMULATED"),
+    ),
+  );
+  assert.equal([...a.conn.db.disaster.iter()][0].name, "Richardson tornado");
+  await assert.rejects(resident.conn.reducers.seedUpdatedDevelopment({}));
   const requests = [...a.conn.db.visibleRequests.iter()];
   const resource = [...a.conn.db.visibleResources.iter()][0];
   const outcomes = await Promise.allSettled([

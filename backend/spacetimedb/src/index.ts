@@ -163,6 +163,54 @@ const followUpTimer = table(
     requestId: t.u64(),
   },
 );
+const userLocation = table(
+  { name: "user_location" },
+  {
+    userId: t.u64().primaryKey(),
+    latitude: t.f64(),
+    longitude: t.f64(),
+    source: t.string(),
+    updatedAt: t.timestamp(),
+  },
+);
+const outreachPreference = table(
+  { name: "outreach_preference" },
+  {
+    userId: t.u64().primaryKey(),
+    smsOptIn: t.bool(),
+    updatedAt: t.timestamp(),
+  },
+);
+const broadcast = table(
+  { name: "broadcast" },
+  {
+    id: t.string().primaryKey(),
+    disasterId: t.u64(),
+    latitude: t.f64(),
+    longitude: t.f64(),
+    radiusKm: t.u32(),
+    maxLocationAgeHours: t.u32(),
+    content: t.string(),
+    serviceIdentity: t.identity(),
+    createdBy: t.identity(),
+    createdAt: t.timestamp(),
+  },
+);
+const broadcastDelivery = table(
+  { name: "broadcast_delivery" },
+  {
+    id: t.string().primaryKey(),
+    broadcastId: t.string().index("btree"),
+    userId: t.u64(),
+    phone: t.string(),
+    sessionId: t.option(t.string()),
+    status: t.string(),
+    attempt: t.u32(),
+    providerMessageId: t.option(t.string()),
+    error: t.option(t.string()),
+    updatedAt: t.timestamp(),
+  },
+);
 const db = schema(
   {
     user,
@@ -178,6 +226,10 @@ const db = schema(
     intakeMessage,
     requestReview,
     followUpTimer,
+    userLocation,
+    outreachPreference,
+    broadcast,
+    broadcastDelivery,
   },
   {
     env: {
@@ -601,7 +653,7 @@ export const seedDevelopment = db.reducer((ctx) => {
   if (config.seeded) fail("Development data already seeded");
   const d = ctx.db.disaster.insert({
     id: 0n,
-    name: "SIMULATION ONLY: Richardson tornado",
+    name: "Richardson tornado",
     kind: "tornado",
     latitude: 32.9483,
     longitude: -96.7299,
@@ -620,7 +672,7 @@ export const seedDevelopment = db.reducer((ctx) => {
     const u = ctx.db.user.insert({
       id: 0n,
       identity: undefined,
-      name: `Fictional Resident ${i + 1}`,
+      name: demoResidentNames[i],
       phone: undefined,
       role: "resident",
       fictional: true,
@@ -629,7 +681,7 @@ export const seedDevelopment = db.reducer((ctx) => {
       id: 0n,
       userId: u.id,
       disasterId: d.id,
-      needs: `SIMULATED: ${needs[i % 5]}`,
+      needs: needs[i % 5],
       latitude: 32.94 + i * 0.001,
       longitude: -96.75 + i * 0.002,
       urgent: i % 3 === 0,
@@ -645,8 +697,8 @@ export const seedDevelopment = db.reducer((ctx) => {
   for (let i = 0; i < 5; i++) {
     const org = ctx.db.organization.insert({
       id: 0n,
-      name: `Fictional Richardson Relief ${i + 1}`,
-      description: "SIMULATION ONLY. Not a real provider or pickup location.",
+      name: `Richardson Relief ${i + 1}`,
+      description: "Community shelter, transportation, food and water support.",
       fictional: true,
     });
     for (let j = 0; j < 4; j++) {
@@ -655,7 +707,7 @@ export const seedDevelopment = db.reducer((ctx) => {
         id: 0n,
         organizationId: org.id,
         kind: kinds[k],
-        name: `SIMULATED ${kinds[k]} ${i * 4 + j + 1}`,
+        name: `${kinds[k]} ${i * 4 + j + 1}`,
         latitude: 32.93 + i * 0.003 + j * 0.001,
         longitude: -96.76 + i * 0.004,
         capacity: capacities[k],
@@ -667,7 +719,136 @@ export const seedDevelopment = db.reducer((ctx) => {
     }
   }
   ctx.db.settings.id.update({ ...config, seeded: true });
+  seedUpdatedTables(ctx);
 });
+
+const demoResidentNames = [
+  "Jordan Parker",
+  "Taylor Reed",
+  "Morgan Ellis",
+  "Casey Brooks",
+  "Avery Lane",
+  "Riley Hayes",
+  "Cameron Blake",
+  "Jamie Quinn",
+  "Alex Rowan",
+  "Drew Bennett",
+];
+
+// Safe to call on an already seeded demo database; never resets existing rows.
+export const seedUpdatedDevelopment = db.reducer((ctx) => {
+  admin(ctx);
+  if (ctx.env.ENABLE_DEV_SEED !== "true") fail("Development seed disabled");
+  if (!ctx.db.settings.id.find(1)?.seeded) fail("Run seed_development first");
+  seedUpdatedTables(ctx);
+});
+
+function seedUpdatedTables(ctx: Ctx) {
+  const event = [...ctx.db.disaster.iter()].find(
+    (d) =>
+      d.simulated &&
+      ["Richardson tornado", "SIMULATION ONLY: Richardson tornado"].includes(
+        d.name,
+      ),
+  );
+  if (!event) fail("Richardson demo disaster not found");
+  if (event.name.startsWith("SIMULATION ONLY:"))
+    ctx.db.disaster.id.update({ ...event, name: "Richardson tornado" });
+  const broadcastId = "demo:richardson:outreach:v1";
+  if (ctx.db.broadcast.id.find(broadcastId)) return;
+  const requests = [...ctx.db.assistanceRequest.iter()]
+    .filter(
+      (r) =>
+        r.disasterId === event.id && ctx.db.user.id.find(r.userId)?.fictional,
+    )
+    .sort((a, b) => (a.id < b.id ? -1 : 1))
+    .slice(0, 10);
+  const content =
+    "Richardson relief team: are you safe, and do you need shelter, transportation, food or water?";
+  ctx.db.broadcast.insert({
+    id: broadcastId,
+    disasterId: event.id,
+    latitude: event.latitude,
+    longitude: event.longitude,
+    radiusKm: 5,
+    maxLocationAgeHours: 24,
+    content,
+    serviceIdentity: ctx.databaseIdentity,
+    createdBy: ctx.sender,
+    createdAt: ctx.timestamp,
+  });
+  for (const [i, request] of requests.entries()) {
+    const resident = ctx.db.user.id.find(request.userId)!;
+    if (/^Fictional Resident \d+$/.test(resident.name))
+      ctx.db.user.id.update({ ...resident, name: demoResidentNames[i] });
+    if (request.needs.startsWith("SIMULATED: "))
+      ctx.db.assistanceRequest.id.update({
+        ...request,
+        needs: request.needs.slice(11),
+      });
+    if (!ctx.db.userLocation.userId.find(resident.id))
+      saveLocation(
+        ctx,
+        resident.id,
+        request.latitude,
+        request.longitude,
+        "manual",
+      );
+    if (!ctx.db.outreachPreference.userId.find(resident.id))
+      savePreference(ctx, resident.id, true);
+    ensureReview(ctx, request);
+    const sessionId = `demo:intake:${resident.id}`;
+    if (!ctx.db.intakeSession.id.find(sessionId)) {
+      ctx.db.intakeSession.insert({
+        id: sessionId,
+        userId: resident.id,
+        owner: ctx.databaseIdentity,
+        requestId: request.id,
+        createdAt: ctx.timestamp,
+      });
+      for (const [n, senderKind, messageContent] of [
+        [0, "ai", content],
+        [1, "resident", request.needs.replace(/^SIMULATED: /, "")],
+      ] as const)
+        ctx.db.intakeMessage.insert({
+          id: `${sessionId}:${n}`,
+          sessionId,
+          senderKind,
+          senderUserId: senderKind === "resident" ? resident.id : undefined,
+          recipientKind: senderKind === "ai" ? "resident" : "ai",
+          channel: "sms",
+          content: messageContent,
+          createdAt: ctx.timestamp,
+        });
+    }
+    // Historical fixtures, not work for a real SMS service.
+    ctx.db.broadcastDelivery.insert({
+      id: `${broadcastId}:${resident.id}`,
+      broadcastId,
+      userId: resident.id,
+      phone: `+120255501${String(i).padStart(2, "0")}`,
+      sessionId,
+      status: "sent",
+      attempt: 1,
+      providerMessageId: `demo-provider-${i + 1}`,
+      error: undefined,
+      updatedAt: ctx.timestamp,
+    });
+  }
+  for (const org of ctx.db.organization.iter()) {
+    if (org.fictional && /^Fictional Richardson Relief \d+$/.test(org.name))
+      ctx.db.organization.id.update({
+        ...org,
+        name: org.name.replace(/^Fictional /, ""),
+        description:
+          "Community shelter, transportation, food and water support.",
+      });
+  }
+  for (const resource of ctx.db.resource.iter()) {
+    if (resource.fictional && resource.name.startsWith("SIMULATED "))
+      ctx.db.resource.id.update({ ...resource, name: resource.name.slice(10) });
+  }
+}
 
 // Review metadata preserves the original urgent flag as resident-reported urgency.
 function ensureReview(
@@ -806,6 +987,323 @@ function writableSession(ctx: Ctx, sessionId: string) {
   if (!session) fail("Intake session not accessible");
   return session;
 }
+
+function saveLocation(
+  ctx: Ctx,
+  userId: bigint,
+  latitude: number,
+  longitude: number,
+  source: string,
+) {
+  coordinates(latitude, longitude);
+  if (!["app", "manual"].includes(source)) fail("Invalid location source");
+  const row = { userId, latitude, longitude, source, updatedAt: ctx.timestamp };
+  if (ctx.db.userLocation.userId.find(userId))
+    ctx.db.userLocation.userId.update(row);
+  else ctx.db.userLocation.insert(row);
+}
+export const updateMyLocation = db.reducer(
+  { latitude: t.f64(), longitude: t.f64(), source: t.string() },
+  (ctx, args) =>
+    saveLocation(
+      ctx,
+      currentUser(ctx).id,
+      args.latitude,
+      args.longitude,
+      args.source,
+    ),
+);
+export const clearMyLocation = db.reducer((ctx) => {
+  ctx.db.userLocation.userId.delete(currentUser(ctx).id);
+});
+function savePreference(ctx: Ctx, userId: bigint, smsOptIn: boolean) {
+  const row = { userId, smsOptIn, updatedAt: ctx.timestamp };
+  if (ctx.db.outreachPreference.userId.find(userId))
+    ctx.db.outreachPreference.userId.update(row);
+  else ctx.db.outreachPreference.insert(row);
+}
+export const setMySmsOptIn = db.reducer(
+  { smsOptIn: t.bool() },
+  (ctx, { smsOptIn }) => {
+    savePreference(ctx, currentUser(ctx).id, smsOptIn);
+  },
+);
+// The owning service records information explicitly provided by an SMS resident.
+export const updateIntakeLocation = db.reducer(
+  { sessionId: t.string(), latitude: t.f64(), longitude: t.f64() },
+  (ctx, args) => {
+    integration(ctx);
+    const session = writableSession(ctx, args.sessionId);
+    if (!session.owner.equals(ctx.sender)) fail("Owning integration required");
+    saveLocation(ctx, session.userId, args.latitude, args.longitude, "manual");
+  },
+);
+export const setIntakeSmsOptIn = db.reducer(
+  { sessionId: t.string(), smsOptIn: t.bool() },
+  (ctx, args) => {
+    integration(ctx);
+    const session = writableSession(ctx, args.sessionId);
+    if (!session.owner.equals(ctx.sender)) fail("Owning integration required");
+    savePreference(ctx, session.userId, args.smsOptIn);
+  },
+);
+export const visibleUserLocations = db.view(
+  { public: true },
+  t.array(userLocation.rowType),
+  (ctx) => {
+    if (staff(ctx)) return [...ctx.db.userLocation.iter()];
+    const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+    const row = u && ctx.db.userLocation.userId.find(u.id);
+    return row ? [row] : [];
+  },
+);
+export const myOutreachPreference = db.view(
+  { public: true },
+  t.array(outreachPreference.rowType),
+  (ctx) => {
+    const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+    const row = u && ctx.db.outreachPreference.userId.find(u.id);
+    return row ? [row] : [];
+  },
+);
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const rad = (n: number) => (n * Math.PI) / 180;
+  const a =
+    Math.sin(rad(lat2 - lat1) / 2) ** 2 +
+    Math.cos(rad(lat1)) *
+      Math.cos(rad(lat2)) *
+      Math.sin(rad(lon2 - lon1) / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.sqrt(Math.max(0, Math.min(1, a))));
+}
+function eligibleRecipient(
+  ctx: ReadCtx,
+  userId: bigint,
+  area: {
+    latitude: number;
+    longitude: number;
+    radiusKm: number;
+    maxLocationAgeHours: number;
+  },
+  now: Timestamp,
+) {
+  const u = ctx.db.user.id.find(userId);
+  const loc = ctx.db.userLocation.userId.find(userId);
+  if (
+    !u ||
+    u.role !== "resident" ||
+    u.fictional ||
+    !u.phone ||
+    !/^\+[1-9]\d{7,14}$/.test(u.phone) ||
+    !ctx.db.outreachPreference.userId.find(userId)?.smsOptIn ||
+    !loc
+  )
+    return false;
+  const age = now.microsSinceUnixEpoch - loc.updatedAt.microsSinceUnixEpoch;
+  return (
+    age >= 0n &&
+    age <= BigInt(area.maxLocationAgeHours) * 3_600_000_000n &&
+    distanceKm(area.latitude, area.longitude, loc.latitude, loc.longitude) <=
+      area.radiusKm
+  );
+}
+export const queueBroadcast = db.reducer(
+  {
+    externalId: t.string(),
+    disasterId: t.u64(),
+    radiusKm: t.u32(),
+    maxLocationAgeHours: t.u32(),
+    content: t.string(),
+    serviceIdentity: t.identity(),
+  },
+  (ctx, args) => {
+    responder(ctx);
+    const id = JSON.stringify([
+      ctx.sender.toHexString(),
+      text(args.externalId, 128),
+    ]);
+    const content = text(args.content, 1600);
+    const existing = ctx.db.broadcast.id.find(id);
+    if (existing) {
+      if (
+        existing.disasterId !== args.disasterId ||
+        existing.radiusKm !== args.radiusKm ||
+        existing.maxLocationAgeHours !== args.maxLocationAgeHours ||
+        existing.content !== content ||
+        !existing.serviceIdentity.equals(args.serviceIdentity)
+      )
+        fail("Broadcast key already used with different content");
+      return;
+    }
+    const event = ctx.db.disaster.id.find(args.disasterId);
+    if (!event?.active) fail("Active disaster required");
+    if (
+      args.radiusKm < 1 ||
+      args.radiusKm > 500 ||
+      args.maxLocationAgeHours < 1 ||
+      args.maxLocationAgeHours > 168
+    )
+      fail("Radius must be 1-500 km and location age 1-168 hours");
+    if (ctx.db.access.identity.find(args.serviceIdentity)?.role !== "ai")
+      fail("Designated AI service required");
+    const row = ctx.db.broadcast.insert({
+      id,
+      disasterId: event.id,
+      latitude: event.latitude,
+      longitude: event.longitude,
+      radiusKm: args.radiusKm,
+      maxLocationAgeHours: args.maxLocationAgeHours,
+      content,
+      serviceIdentity: args.serviceIdentity,
+      createdBy: ctx.sender,
+      createdAt: ctx.timestamp,
+    });
+    for (const loc of ctx.db.userLocation.iter()) {
+      if (!eligibleRecipient(ctx, loc.userId, row, ctx.timestamp)) continue;
+      ctx.db.broadcastDelivery.insert({
+        id: JSON.stringify([id, loc.userId.toString()]),
+        broadcastId: id,
+        userId: loc.userId,
+        phone: ctx.db.user.id.find(loc.userId)!.phone!,
+        sessionId: undefined,
+        status: "queued",
+        attempt: 0,
+        providerMessageId: undefined,
+        error: undefined,
+        updatedAt: ctx.timestamp,
+      });
+    }
+  },
+);
+function deliveryForService(ctx: Ctx, deliveryId: string) {
+  const delivery = ctx.db.broadcastDelivery.id.find(deliveryId);
+  if (!delivery) fail("Delivery not found");
+  const parent = ctx.db.broadcast.id.find(delivery.broadcastId)!;
+  if (
+    ctx.db.access.identity.find(ctx.sender)?.role !== "ai" ||
+    !parent.serviceIdentity.equals(ctx.sender)
+  )
+    fail("Designated AI service required");
+  return { delivery, parent };
+}
+export const claimBroadcastDelivery = db.reducer(
+  { deliveryId: t.string() },
+  (ctx, { deliveryId }) => {
+    const { delivery, parent } = deliveryForService(ctx, deliveryId);
+    if (delivery.status !== "queued") fail("Delivery is not queued");
+    if (
+      !ctx.db.disaster.id.find(parent.disasterId)?.active ||
+      !eligibleRecipient(ctx, delivery.userId, parent, ctx.timestamp) ||
+      ctx.db.user.id.find(delivery.userId)?.phone !== delivery.phone
+    ) {
+      ctx.db.broadcastDelivery.id.update({
+        ...delivery,
+        status: "skipped",
+        updatedAt: ctx.timestamp,
+      });
+      return;
+    }
+    const sessionId = JSON.stringify([
+      ctx.sender.toHexString(),
+      `broadcast:${delivery.id}`,
+    ]);
+    if (!ctx.db.intakeSession.id.find(sessionId))
+      ctx.db.intakeSession.insert({
+        id: sessionId,
+        userId: delivery.userId,
+        owner: ctx.sender,
+        requestId: undefined,
+        createdAt: ctx.timestamp,
+      });
+    ctx.db.broadcastDelivery.id.update({
+      ...delivery,
+      sessionId,
+      status: "sending",
+      attempt: delivery.attempt + 1,
+      error: undefined,
+      updatedAt: ctx.timestamp,
+    });
+  },
+);
+export const finishBroadcastDelivery = db.reducer(
+  {
+    deliveryId: t.string(),
+    attempt: t.u32(),
+    providerMessageId: t.option(t.string()),
+    error: t.option(t.string()),
+  },
+  (ctx, args) => {
+    const { delivery, parent } = deliveryForService(ctx, args.deliveryId);
+    if ((args.providerMessageId === undefined) === (args.error === undefined))
+      fail("Supply either provider message ID or definite failure");
+    const providerMessageId =
+      args.providerMessageId === undefined
+        ? undefined
+        : text(args.providerMessageId, 256);
+    const error = args.error === undefined ? undefined : text(args.error, 1000);
+    const status = providerMessageId === undefined ? "failed" : "sent";
+    if (delivery.attempt !== args.attempt) fail("Stale delivery attempt");
+    if (
+      delivery.status === status &&
+      delivery.providerMessageId === providerMessageId &&
+      delivery.error === error
+    )
+      return;
+    if (delivery.status !== "sending" || !delivery.sessionId)
+      fail("Claim delivery first");
+    ctx.db.broadcastDelivery.id.update({
+      ...delivery,
+      status,
+      providerMessageId,
+      error,
+      updatedAt: ctx.timestamp,
+    });
+    if (status === "sent")
+      ctx.db.intakeMessage.insert({
+        id: JSON.stringify(["broadcast", delivery.id]),
+        sessionId: delivery.sessionId,
+        senderKind: "ai",
+        senderUserId: undefined,
+        recipientKind: "resident",
+        channel: "sms",
+        content: parent.content,
+        createdAt: ctx.timestamp,
+      });
+  },
+);
+export const retryBroadcastDelivery = db.reducer(
+  { deliveryId: t.string() },
+  (ctx, { deliveryId }) => {
+    responder(ctx);
+    const delivery = ctx.db.broadcastDelivery.id.find(deliveryId);
+    if (!delivery || delivery.status !== "failed")
+      fail("Only definite failures can be retried");
+    ctx.db.broadcastDelivery.id.update({
+      ...delivery,
+      status: "queued",
+      updatedAt: ctx.timestamp,
+    });
+  },
+);
+function broadcastsFor(ctx: ReadCtx) {
+  if (staff(ctx)) return [...ctx.db.broadcast.iter()];
+  if (ctx.db.access.identity.find(ctx.sender)?.role !== "ai") return [];
+  return [...ctx.db.broadcast.iter()].filter((b) =>
+    b.serviceIdentity.equals(ctx.sender),
+  );
+}
+export const visibleBroadcasts = db.view(
+  { public: true },
+  t.array(broadcast.rowType),
+  broadcastsFor,
+);
+export const visibleBroadcastDeliveries = db.view(
+  { public: true },
+  t.array(broadcastDelivery.rowType),
+  (ctx) =>
+    broadcastsFor(ctx).flatMap((b) => [
+      ...ctx.db.broadcastDelivery.broadcastId.filter(b.id),
+    ]),
+);
 
 export const startIntake = db.reducer(
   {
