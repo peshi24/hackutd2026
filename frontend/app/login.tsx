@@ -33,22 +33,6 @@ export default function Login() {
             >
                 {/* Main login content */}
                 <View style={styles.content}>
-                    <TextInput
-                        style={styles.input}
-                        value={email}
-                        onChangeText={setEmail}
-                        placeholder="Email address (optional)"
-                        placeholderTextColor="#888"
-                        accessibilityLabel="Email address (optional)"
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        editable={!busy}
-                    />
-                    {error ? <Text accessibilityRole="alert" style={{ color: "white", marginBottom: 12 }}>{error}</Text> : null}
-                    <Text style={{ color: "white", marginBottom: 12 }}>
-                        {busy ? "Complete email sign-in in the browser, then return here." : !ready ? "Loading sign-in..." : "Continue to secure email sign-in."}
-                    </Text>
                     {/* Hosted sign-in button */}
                     <TouchableOpacity
                         style={styles.button}
@@ -57,7 +41,7 @@ export default function Login() {
                         accessibilityState={{ disabled: busy || !ready, busy }}
                     >
                         <Text style={styles.buttonText}>
-                            {busy ? "Signing in..." : "Submit"}
+                            {busy ? "Signing in..." : "Click on this button for login"}
                         </Text>
                     </TouchableOpacity>
 
@@ -149,14 +133,14 @@ const styles = StyleSheet.create({
     button: {
         width: "100%",
         height: 50,
-        backgroundColor: "#E31837",
+        backgroundColor: "#fff",
         borderRadius: 8,
         justifyContent: "center",
         alignItems: "center",
     },
 
     buttonText: {
-        color: "#fff",
+        color: "#E31837",
         fontSize: 17,
         fontWeight: "bold",
     },
