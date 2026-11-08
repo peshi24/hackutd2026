@@ -1,6 +1,8 @@
 {
   "dependencies": {
+    "@google/genai": "^3.0.0",
     "bun": "^1.4.4",
+    "dotenv": "^18.0.9",
     "hono": "^4.13.17",
     "spacetimedb": "^2.14.0",
     "spectrum-ts": "^12.15.0",

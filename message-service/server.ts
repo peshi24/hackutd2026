@@ -1,3 +1,4 @@
+/*
 import { Spectrum } from "spectrum-ts";
 import { imessage } from "spectrum-ts/providers/imessage";
 import { DbConnection } from "../backend/client/module_bindings";
@@ -32,6 +33,23 @@ const app = await Spectrum({
 
 console.log("Photon Spectrum agent running...");
 
+const generateDisasterResponse = async (incomingText: string, senderPhone?: string): Promise<string> => {
+  const query = incomingText.toLowerCase();
+
+  // Example of handling complex multi-step choices or keywords
+  if (query.includes("1") || query.includes("hotel")) {
+    return "State Farm Aid: You selected Hotels. Please reply with your current zip code or city so we can find available lodging near you.";
+  } else if (query.includes("2") || query.includes("aid")) {
+    return "State Farm Aid: You selected Aid Trailers. Food, water, and emergency kits are stationed at community centers. Reply 'LOC' for the nearest site.";
+  } else if (query.includes("3") || query.includes("transport")) {
+    return "State Farm Aid: You selected Transport. Please reply with the number of people needing evacuation assistance.";
+  }
+
+  // Default menu if input is unrecognized
+  return "State Farm Aid: We received your request. Are you looking for (1) Hotels, (2) Aid Trailers, or (3) Transport?";
+};
+
+
 for await (const [space, message] of app.messages) {
   if (message.content.type !== "text") continue;
 
@@ -40,7 +58,11 @@ for await (const [space, message] of app.messages) {
   );
 
   const text = message.content.text.trim();
-  if (!text) continue;
+
+  const incomingText = message.content.text.trim();
+  const senderPhone = message.sender?.id;
+
+  if (!incomingText) continue;
 
   try {
     await connection.reducers.saveMessage({
@@ -51,9 +73,11 @@ for await (const [space, message] of app.messages) {
       content: text,
     });
 
-    await message.reply(
-      "State Farm Aid: We received your request. Are you looking for (1) Hotels, (2) Aid Trailers, or (3) Transport?",
-    );
+    await message.reply("State Farm Aid: We received your request. Are you looking for (1) Hotels, (2) Aid Trailers, or (3) Transport?",);
+    const replyText = await generateDisasterResponse(incomingText, senderPhone);
+
+    // 3. Send response back to user
+    await message.reply(replyText);
   } catch (error) {
     console.error("Failed to save SMS message:", error);
     await message.reply(
@@ -61,3 +85,4 @@ for await (const [space, message] of app.messages) {
     );
   }
 }
+*/
