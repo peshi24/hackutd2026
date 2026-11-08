@@ -50,7 +50,7 @@ export default function Login() {
                     Welcome to
                 </Text>
                 <Text style={styles.bigText}>
-                    WeatherTogether
+                    Lifeline
                 </Text>
             </KeyboardAvoidingView>
         </ImageBackground>
