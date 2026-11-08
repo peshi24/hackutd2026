@@ -42,6 +42,42 @@ export const Disaster = __t.object("Disaster", {
 });
 export type Disaster = __Infer<typeof Disaster>;
 
+export const FindMatchingResources = __t.object("FindMatchingResources", {
+  requestId: __t.u64(),
+  kind: __t.string(),
+  quantity: __t.u32(),
+  maxDistanceKm: __t.u32(),
+});
+export type FindMatchingResources = __Infer<typeof FindMatchingResources>;
+
+export const FollowUpTimer = __t.object("FollowUpTimer", {
+  id: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+  requestId: __t.u64(),
+});
+export type FollowUpTimer = __Infer<typeof FollowUpTimer>;
+
+export const IntakeMessage = __t.object("IntakeMessage", {
+  id: __t.string(),
+  sessionId: __t.string(),
+  senderKind: __t.string(),
+  senderUserId: __t.option(__t.u64()),
+  recipientKind: __t.string(),
+  channel: __t.string(),
+  content: __t.string(),
+  createdAt: __t.timestamp(),
+});
+export type IntakeMessage = __Infer<typeof IntakeMessage>;
+
+export const IntakeSession = __t.object("IntakeSession", {
+  id: __t.string(),
+  userId: __t.u64(),
+  owner: __t.identity(),
+  requestId: __t.option(__t.u64()),
+  createdAt: __t.timestamp(),
+});
+export type IntakeSession = __Infer<typeof IntakeSession>;
+
 export const Message = __t.object("Message", {
   id: __t.u64(),
   senderId: __t.u64(),
@@ -66,6 +102,18 @@ export const Organization = __t.object("Organization", {
   fictional: __t.bool(),
 });
 export type Organization = __Infer<typeof Organization>;
+
+export const RequestReview = __t.object("RequestReview", {
+  requestId: __t.u64(),
+  assessedUrgent: __t.option(__t.bool()),
+  assessedBy: __t.option(__t.identity()),
+  assessedAt: __t.option(__t.timestamp()),
+  acknowledgedBy: __t.option(__t.identity()),
+  acknowledgedAt: __t.option(__t.timestamp()),
+  followUpAt: __t.timestamp(),
+  followUpRequired: __t.bool(),
+});
+export type RequestReview = __Infer<typeof RequestReview>;
 
 export const Resource = __t.object("Resource", {
   id: __t.u64(),
@@ -93,6 +141,14 @@ export const ResourceAssignment = __t.object("ResourceAssignment", {
 });
 export type ResourceAssignment = __Infer<typeof ResourceAssignment>;
 
+export const ResourceMatchResult = __t.object("ResourceMatchResult", {
+  get resource() {
+    return Resource;
+  },
+  distanceKm: __t.f64(),
+});
+export type ResourceMatchResult = __Infer<typeof ResourceMatchResult>;
+
 export const Settings = __t.object("Settings", {
   id: __t.u8(),
   admin: __t.identity(),
@@ -112,6 +168,15 @@ export type User = __Infer<typeof User>;
 
 export const VisibleAssignments = __t.object("VisibleAssignments", {});
 export type VisibleAssignments = __Infer<typeof VisibleAssignments>;
+
+export const VisibleIntakeMessages = __t.object("VisibleIntakeMessages", {});
+export type VisibleIntakeMessages = __Infer<typeof VisibleIntakeMessages>;
+
+export const VisibleIntakeSessions = __t.object("VisibleIntakeSessions", {});
+export type VisibleIntakeSessions = __Infer<typeof VisibleIntakeSessions>;
+
+export const VisibleRequestReviews = __t.object("VisibleRequestReviews", {});
+export type VisibleRequestReviews = __Infer<typeof VisibleRequestReviews>;
 
 export const VisibleRequests = __t.object("VisibleRequests", {});
 export type VisibleRequests = __Infer<typeof VisibleRequests>;

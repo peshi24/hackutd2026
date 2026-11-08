@@ -25,6 +25,7 @@ const env = {
   SPACETIME_CLI: cli,
   SPACETIME_TEST_URI: server,
   SPACETIME_TEST_DATABASE: database,
+  ...(mode === "test" ? { FOLLOW_UP_SECONDS: "2" } : {}),
 };
 const children = new Set();
 let stopping = false;
@@ -148,6 +149,7 @@ try {
       "client/tsconfig.test.json",
     ]);
     await run(process.execPath, ["tests/integration.mjs"]);
+    await run(process.execPath, ["tests/intake.mjs"]);
   } else {
     const seed = spawnSync(
       cli,
@@ -170,6 +172,14 @@ try {
     console.log(
       `Development database: ${database}\nServer: ${server}\nDemo data ready. Watching for changes; Ctrl+C to stop.`,
     );
+    await run(cli, [
+      "call",
+      database,
+      "initialize_request_reviews",
+      "--server",
+      server,
+      "--no-config",
+    ]);
     await run(cli, [
       "dev",
       database,

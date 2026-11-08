@@ -2,6 +2,69 @@
 
 SpacetimeDB CLI **2.14.1**, server/client SDK **2.14.0** (pinned and locked). Implementation, generated client bindings and tests are entirely in `backend/`; the Expo frontend is unchanged.
 
+## AI intake and request review update
+
+The original nine tables and their columns/IDs are preserved. Four new private tables add the requested workflow:
+
+| Table | Purpose |
+| --- | --- |
+| `intake_session` | Conversation before a request exists; contains resident `userId`, owning service identity, optional `requestId` |
+| `intake_message` | Resident/AI/responder messages, channel, timestamp, and deduplicated provider event key |
+| `request_review` | Optional assessed urgency and assessor/time, acknowledgement actor/time, follow-up deadline/flag |
+| `follow_up_timer` | Server-managed one-shot scheduled checks for unacknowledged requests |
+
+Existing `message` rows retain their original request-based `conversationId` meaning. `saveMessage` remains available for that legacy human-to-human path. Use **`startIntake` → `saveIntakeMessage` → `completeIntake`** for Photon/AI outreach. New intake messages are read through `visibleIntakeMessages`, not `myMessages`. No historical messages are moved or reinterpreted.
+
+The publishing administrator grants the service identity the **`ai`** role through `set_access`. This grants intake-integration capabilities plus permission to send as AI and assess its own intake requests. Plain `integration` identities cannot send as AI or assess urgency. Responders/admin can assess any active request and acknowledge it. The `ai` credential belongs only in the trusted service, never the mobile app. The service must still verify provider webhooks; this backend stores messages but does not call the AI/SMS provider itself.
+
+1. The service calls `startIntake({ externalId, userId, name, phone })`. Use a stable thread key. Supply an existing `userId`, or `undefined` to create an SMS-only resident. Subscribe to `visibleIntakeSessions` to receive the resulting `id` and `userId`. Repeating the same key under the same caller identity reuses the session without creating another resident. Different thread keys can still create different resident records; automatic phone/account merging is not implemented.
+2. Call `saveIntakeMessage({ sessionId, externalId, senderKind, recipientKind, channel, content })`. `senderKind` is `resident`, `ai`, or `responder`; AI/responders address `resident`, and residents address `ai` or `responder`. Use a provider event ID (or stable app-generated operation ID) as `externalId`. Same caller/session/key/payload is a no-op; conflicting payloads are rejected. The service can record inbound SMS as the resident. A resident app can send only as itself. A responder must have a registered profile. Messages can precede the request.
+3. Call `completeIntake({ sessionId, disasterId, needs, latitude, longitude, reportedUrgent })`. It atomically creates a request and links it to the session; retries reuse that link. Read `requestId` from the session subscription. This is a one-time completion, not an update API.
+4. The owning AI identity or a responder calls `assessRequestUrgency({ requestId, urgent })`. Read the result from `visibleRequestReviews`.
+
+Sessions/messages are visible to the resident, responders/admin, and the currently authorized owning integration. Another integration cannot read or mutate them. Photon should create the session under the service identity, including when linking an existing app resident. Resident-created sessions are not automatically assigned to an AI service. Sender and recipient kinds describe routing within the session; all authorized session viewers can read its messages.
+
+**Urgency:** the original `assistance_request.urgent` remains a **reported** flag for backward compatibility. It never becomes a trusted assessment automatically. `request_review.assessedUrgent === undefined` means **unassessed**; `false` means assessed non-urgent. Missing review metadata on a legacy row also means unassessed. The dashboard must show reported urgency separately and use review metadata for assessed priority.
+
+**Acknowledgement:** `acknowledgeRequest({ requestId })` records the first human responder/admin acknowledgement and clears `followUpRequired`. Assignment or AI assessment is not acknowledgement. New requests receive a one-shot deadline, normally 30 minutes after creation. Set database environment `FOLLOW_UP_SECONDS` to an integer 1–604800 to change deadlines for subsequently initialized reviews. The scheduled reducer flags active, still-unacknowledged requests; it cannot be invoked by ordinary clients. Resolved/cancelled requests do not produce alerts. This flags dashboard rows; it does not send push/SMS notifications.
+
+**Matching:** subscribe to the authorized parameterized view, for example:
+
+```typescript
+const matches = connection.subscriptionBuilder().subscribe(
+  "SELECT * FROM find_matching_resources(1, 'water', 20, 25)"
+);
+// Args: request ID, resource kind, units required, maximum distance in km (1–500).
+// Read connection.db.findMatchingResources.iter(), then sort by distanceKm for rendering.
+// Unsubscribe the old query when changing filters; query results share one cache.
+// matches.unsubscribe();
+```
+
+Matching returns up to 20 nearest available resources with sufficient unreserved capacity. Each row contains `resource` and `distanceKm`. Access is limited to responders/admin or the request's owning AI service. Distance is straight-line, not a routing/road-access estimate. Pass a structured kind/quantity derived from the UI or AI; free-text needs are not automatically parsed. Subscription/cache row order is not guaranteed, so sort the returned rows on the client. Recommendations do not reserve stock; `assignResource` still checks capacity atomically. Use allowlisted kinds and validated numeric arguments when constructing SQL.
+
+**Consumables:** resolving a request now subtracts fulfilled food/water quantities from total capacity while releasing their reservation. Cancellation and explicit release restore reserved availability without consuming stock. Other resource kinds release reservations as before. Previously resolved allocations are not retroactively deducted.
+
+### Updating your already-published database
+
+No Maincloud deployment is performed by these code changes. The migration was rehearsed against a populated local database using the previous schema: all nine original table snapshots remained identical after publishing and repeated metadata initialization.
+
+From `backend/`, using the same administrator identity that originally published the module:
+
+```powershell
+spacetime publish YOUR-PUBLISHED-DATABASE --server maincloud --module-path spacetimedb --no-config --delete-data=never
+spacetime call YOUR-PUBLISHED-DATABASE initialize_request_reviews --server maincloud --no-config
+```
+
+The first command only adds tables/views/reducers and updates logic; it does not delete the existing residents, requests, messages, resources or assignments. Review the migration plan; if it proposes unexpected changes, stop. The second command creates missing request-review metadata and timers without rewriting existing requests; it is safe to repeat. Existing reported urgency is preserved, assessed urgency starts unassessed, and acknowledgement starts empty. Old active requests whose creation time is already past the deadline will be flagged promptly. No prior acknowledgement can be inferred from the old data. New requests initialize metadata automatically.
+
+Existing access grants and admin identity remain unchanged. Grant the service `ai` access explicitly (this replaces its previous single role):
+
+```powershell
+spacetime call YOUR-PUBLISHED-DATABASE set_access '"SERVICE_IDENTITY_HEX"' '"ai"' --server maincloud --no-config
+```
+
+Do not reseed or use a delete-data flag that allows deletion. Commit/share the regenerated bindings and updated `client/connect.ts`; old APIs remain, but frontend teammates need the new bindings/views for these features. Data preservation was tested against this repository's prior schema, not inspected against your live database. See the official [automatic migration rules](https://spacetimedb.com/docs/databases/automatic-migrations/).
+
 ## Install and verify
 
 For everyday development, from `backend/`, just run **`npm run dev`**. It starts (or reuses) the local server, publishes `hackutd-disaster-dev`, seeds fictional demo data once, generates bindings, and watches for backend changes. Restarting preserves your data. Press Ctrl+C to stop; a server already running before the command is left running.
@@ -79,7 +142,7 @@ Never put administrator/integration credentials in the mobile app, EXPO_PUBLIC v
 | Reducer | Caller / behavior |
 | --- | --- |
 | `register_user` | Caller registers own profile with optional private phone |
-| `set_access` | Admin grants responder/integration/none |
+| `set_access` | Admin grants responder/integration/ai/none |
 | `create_disaster`, `create_organization` | Responder/admin creates event/provider |
 | `create_assistance_request` | Caller creates own request (`userId: undefined`); integration may supply existing resident ID |
 | `update_request_status` | Responder/admin; open → in_progress/cancelled; in_progress → resolved/cancelled |
@@ -91,9 +154,9 @@ Never put administrator/integration credentials in the mobile app, EXPO_PUBLIC v
 | `register_integration_resident` | Integration creates identity-less SMS resident |
 | `seed_development` | Administrator plus explicit development environment gate |
 
-Allocation checks, capacity update, assignment insertion and request update commit in one transaction; failures roll back. Concurrent assignments cannot overbook. Remaining capacity is `capacity - allocated`. Disabling availability blocks new reservations without cancelling existing ones. Resolving/cancelling requests atomically releases active assignments. Food/water quantities are reservations, not a consumption ledger: reduce capacity after distribution. Terminal requests cannot reopen.
+Allocation checks, capacity update, assignment insertion and request update commit in one transaction; failures roll back. Concurrent assignments cannot overbook. Remaining capacity is `capacity - allocated`. Disabling availability blocks new reservations without cancelling existing ones. Resolving/cancelling requests atomically closes active assignments; resolution also deducts fulfilled food/water from capacity. Terminal requests cannot reopen.
 
-`conversationId` is the assistance request ID. Messages must connect that resident and an authorized responder/admin profile. App clients cannot spoof senders or write SMS. This module stores messages; it does not deliver SMS. A trusted adapter must verify provider webhook signatures and handle delivery. An operator supplies the adapter with resident/request IDs located through the dashboard; reducers do not return inserted IDs. Integration-created residents are not automatically linked to later app accounts.
+For the legacy `saveMessage` API, `conversationId` is the assistance request ID. Messages must connect that resident and an authorized responder/admin profile. App clients cannot spoof senders or write SMS. The legacy adapter requires resident/request IDs from an operator. Prefer the new intake API above: the owning service discovers IDs through its scoped session subscription and handles pre-request AI messaging. This module stores messages; it does not deliver SMS. A trusted adapter must verify provider webhook signatures and handle delivery. Integration-created residents are not automatically linked to later app accounts.
 
 ## Frontend integration
 

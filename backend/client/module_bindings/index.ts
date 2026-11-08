@@ -34,17 +34,23 @@ import {
 } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcknowledgeRequestReducer from "./acknowledge_request_reducer";
+import AssessRequestUrgencyReducer from "./assess_request_urgency_reducer";
 import AssignResourceReducer from "./assign_resource_reducer";
+import CompleteIntakeReducer from "./complete_intake_reducer";
 import CreateAssistanceRequestReducer from "./create_assistance_request_reducer";
 import CreateDisasterReducer from "./create_disaster_reducer";
 import CreateOrganizationReducer from "./create_organization_reducer";
 import CreateResourceReducer from "./create_resource_reducer";
+import InitializeRequestReviewsReducer from "./initialize_request_reviews_reducer";
 import RegisterIntegrationResidentReducer from "./register_integration_resident_reducer";
 import RegisterUserReducer from "./register_user_reducer";
 import ReleaseAssignmentReducer from "./release_assignment_reducer";
+import SaveIntakeMessageReducer from "./save_intake_message_reducer";
 import SaveMessageReducer from "./save_message_reducer";
 import SeedDevelopmentReducer from "./seed_development_reducer";
 import SetAccessReducer from "./set_access_reducer";
+import StartIntakeReducer from "./start_intake_reducer";
 import UpdateRequestStatusReducer from "./update_request_status_reducer";
 import UpdateResourceAvailabilityReducer from "./update_resource_availability_reducer";
 
@@ -52,10 +58,14 @@ import UpdateResourceAvailabilityReducer from "./update_resource_availability_re
 
 // Import all table schema definitions
 import DisasterRow from "./disaster_table";
+import FindMatchingResourcesRow from "./find_matching_resources_table";
 import MyMessagesRow from "./my_messages_table";
 import MyProfileRow from "./my_profile_table";
 import OrganizationRow from "./organization_table";
 import VisibleAssignmentsRow from "./visible_assignments_table";
+import VisibleIntakeMessagesRow from "./visible_intake_messages_table";
+import VisibleIntakeSessionsRow from "./visible_intake_sessions_table";
+import VisibleRequestReviewsRow from "./visible_request_reviews_table";
 import VisibleRequestsRow from "./visible_requests_table";
 import VisibleResourcesRow from "./visible_resources_table";
 import VisibleUsersRow from "./visible_users_table";
@@ -86,6 +96,13 @@ const tablesSchema = __schema({
       { name: 'organization_id_key', constraint: 'unique', columns: ['id'] },
     ],
   }, OrganizationRow),
+  findMatchingResources: __table({
+    name: 'find_matching_resources',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, FindMatchingResourcesRow),
   myMessages: __table({
     name: 'my_messages',
     indexes: [
@@ -107,6 +124,27 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleAssignmentsRow),
+  visibleIntakeMessages: __table({
+    name: 'visible_intake_messages',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleIntakeMessagesRow),
+  visibleIntakeSessions: __table({
+    name: 'visible_intake_sessions',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleIntakeSessionsRow),
+  visibleRequestReviews: __table({
+    name: 'visible_request_reviews',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleRequestReviewsRow),
   visibleRequests: __table({
     name: 'visible_requests',
     indexes: [
@@ -132,17 +170,23 @@ const tablesSchema = __schema({
 
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
+  __reducerSchema("acknowledge_request", AcknowledgeRequestReducer),
+  __reducerSchema("assess_request_urgency", AssessRequestUrgencyReducer),
   __reducerSchema("assign_resource", AssignResourceReducer),
+  __reducerSchema("complete_intake", CompleteIntakeReducer),
   __reducerSchema("create_assistance_request", CreateAssistanceRequestReducer),
   __reducerSchema("create_disaster", CreateDisasterReducer),
   __reducerSchema("create_organization", CreateOrganizationReducer),
   __reducerSchema("create_resource", CreateResourceReducer),
+  __reducerSchema("initialize_request_reviews", InitializeRequestReviewsReducer),
   __reducerSchema("register_integration_resident", RegisterIntegrationResidentReducer),
   __reducerSchema("register_user", RegisterUserReducer),
   __reducerSchema("release_assignment", ReleaseAssignmentReducer),
+  __reducerSchema("save_intake_message", SaveIntakeMessageReducer),
   __reducerSchema("save_message", SaveMessageReducer),
   __reducerSchema("seed_development", SeedDevelopmentReducer),
   __reducerSchema("set_access", SetAccessReducer),
+  __reducerSchema("start_intake", StartIntakeReducer),
   __reducerSchema("update_request_status", UpdateRequestStatusReducer),
   __reducerSchema("update_resource_availability", UpdateResourceAvailabilityReducer),
 );
@@ -157,6 +201,7 @@ const REMOTE_MODULE = {
     cliVersion: "2.14.1" as const,
   },
   tables: tablesSchema.schemaType.tables,
+  viewsWithArgs: ["find_matching_resources"],
   reducers: reducersSchema.reducersType.reducers,
   ...proceduresSchema,
 } satisfies __RemoteModule<

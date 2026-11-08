@@ -33,6 +33,9 @@ export function connectDashboard(options: {
       tables.visibleResources,
       tables.visibleAssignments,
       tables.myMessages,
+      tables.visibleIntakeSessions,
+      tables.visibleIntakeMessages,
+      tables.visibleRequestReviews,
     ]);
 
   return {
