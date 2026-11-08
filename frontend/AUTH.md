@@ -1,30 +1,35 @@
-# Email sign-in setup
+# NeighborAlert authentication setup
 
-1. Copy `.env.example` to `.env.local`; set the public SpacetimeAuth client ID and database name. Never include a client secret. The backend must have the same `SPACETIMEAUTH_CLIENT_ID` and a prepopulated account for the email.
-2. Enable email magic-link login in SpacetimeAuth. Register these exact callback URLs on its client:
-   - Native callback is currently blocked: the SpacetimeAuth dashboard rejected `neighboralert://callback`. Native login needs a supported HTTPS app-link setup before it can be tested.
-   - Local web: `http://localhost:8081/callback` (match the actual host/port).
-   - Hosted web: `https://YOUR-HOST/callback`.
-3. Restart Expo after environment changes. Use the browser flow for now. Native login remains blocked on configuring a provider-supported callback; Expo Go is not a workaround.
+The app uses Expo AuthSession for an OIDC authorization-code flow with PKCE; no separate SpacetimeAuth client SDK is installed. It discovers endpoints from `https://auth.spacetimedb.com/oidc/.well-known/openid-configuration`, exchanges the returned code, then gives the ID token to `backend/client/login.ts`. The backend verifies the SpacetimeAuth issuer, audience, and verified email, links only a prepopulated account, and publishes the profile after the login reducer succeeds.
 
-Submit opens SpacetimeAuth's hosted OIDC login with PKCE. The app's email field is optional: when supplied, it is passed as a login hint. SpacetimeAuth may still ask for the email on its page and sends the magic link there. Leaving the app's email field blank does not block sign-in.
+## Environment and provider configuration
 
-After the link returns, the app exchanges the code with the original PKCE verifier and passes the ID token to `backend/client/login.ts`. The backend verifies the email/account/role. Only after account verification and subscriptions succeed does routing open `/home`. Unknown accounts show `No account found for this email.` Cancellation/errors allow retry. No account is created by login.
+Set these frontend values in `frontend/.env.local` and restart Expo after changing them:
 
-Routes now live in `src/app`; wrappers reuse existing screens under `app`. The session provider exposes the connection and authenticated database profile through `useSession()`: `const { user, connection } = useSession()`. `user` contains the existing account ID, name, identity and role; it is read from the backend-scoped `myProfile` subscription, not from form input. Profile changes update the context, and disconnect/expiry clears it. Email remains private backend lookup data. Existing chat/location fixture content is unchanged.
+- `EXPO_PUBLIC_SPACETIMEAUTH_CLIENT_ID`: public client ID from SpacetimeAuth. This is intentionally public; never put a client secret in the app.
+- `EXPO_PUBLIC_SPACETIMEDB_URI`: SpacetimeDB WebSocket URI.
+- `EXPO_PUBLIC_SPACETIMEDB_DATABASE`: database name.
 
-## Test
+Configure the backend module's `SPACETIMEAUTH_CLIENT_ID` to the same client ID. Enable the desired email/magic-link login method and prepopulate eligible accounts; the login flow does not create accounts. The optional email input is only sent as an OIDC login hint.
 
-Use a prepopulated real inbox for success, an unlisted inbox for rejection, and cancel once to check retry. Open `/home` before login to verify the guard. Keep the original app/tab open and complete the email link on the same device/browser. No email is sent during builds or code checks.
+Register the web callback URLs on the SpacetimeAuth client exactly as used by the deployment:
 
-Sessions/PKCE are memory-only for this MVP. Reloading or killing the app requires starting login again. Expiry/disconnection returns to login; no silent refresh is implemented. A callback opened on another device or after restarting cannot complete the original request.
+- Local web: `http://localhost:8081/callback` (or the actual development origin and port).
+- Hosted web: `https://hackutd2026.vercel.app/callback`.
 
-## Existing blockers
+The Expo Router callback route is `frontend/src/app/callback.tsx`. Keep the registered callback, `redirectUri` from `frontend/services/spacetimeAuth.ts`, and deployed web origin in sync. The native redirect is `neighboralert://callback`; that exact URI intentionally skips external authorization and goes straight to Home, so it is not used as a SpacetimeAuth callback.
 
-The generated bindings include the urgency-score schema. The published database must match these bindings before the shared login helper can subscribe. This change does not deploy or reset Maincloud.
+## Flow and route behavior
 
-The existing location screen uses native `react-native-maps`; web builds need the team's web map fallback. Native development builds are the primary target.
+- When the computed redirect URI is exactly `neighboralert://callback`, no discovery request, browser session, or token exchange is started. Home is accessible on Android (and any other platform producing that exact URI); this is a navigation bypass, not an authenticated SpacetimeDB session.
+- For any other redirect URI, the login button starts OIDC with PKCE. Expo AuthSession returns the callback parameters to the original flow; the app exchanges the code using the original verifier and redirect URI, then verifies the account and subscribes to its SpacetimeDB profile. Only an established connection grants normal Home access.
+- The Expo Router route tree is `frontend/src/app` (Expo Router selects it when both `src/app` and `app` exist). Loading, missing client ID, cancellation, provider errors, unknown accounts, and expired sessions are surfaced in the UI. No automatic silent renewal is implemented; start sign-in again after expiry.
+
+For testing, use a prepopulated account and inbox for success, an unlisted email for account rejection, and cancel once to confirm retry. Opening `/home` before authentication should return to sign-in unless the special URI bypass applies. Builds and type checks do not send email or alter the database.
+
+The generated SpacetimeDB bindings must match the published module schema before login subscriptions can be applied. This flow does not deploy or reset the database.
 
 Official references:
 - https://spacetimedb.com/docs/core-concepts/authentication/spacetimeauth/react-integration/
-- https://docs.expo.dev/guides/authentication/
+- https://docs.expo.dev/versions/v58.0.0/sdk/auth-session/
+- https://docs.expo.dev/router/advanced/authentication/

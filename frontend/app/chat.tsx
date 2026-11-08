@@ -28,8 +28,22 @@ type ChatProps = {
 
 export function Chat({ locationSelection }: ChatProps) {
 
-    // Sample conversation (will eventually come from backend)
-    const [messages, setMessages] = useState<Message[]>(() => [
+    const [sentMessages, setSentMessages] = useState<Message[]>([]);
+    const messages: Message[] = [
+        ...(locationSelection
+            ? [
+                {
+                    id: "location-selection",
+                    sender: "statefarm",
+                    text: `You chose ${locationSelection.trailerName} (${locationSelection.distanceMiles.toFixed(1)} miles away). You answered ${locationSelection.canTravel ? "yes: you are able" : "no: you are not able"} to get there by yourself.`,
+                },
+                {
+                    id: "location-address",
+                    sender: "statefarm",
+                    text: `The address is: ${locationSelection.address}`,
+                },
+            ]
+            : []),
         {
             id: "1",
             sender: "statefarm",
@@ -60,21 +74,8 @@ export function Chat({ locationSelection }: ChatProps) {
             sender: "statefarm",
             text: "Please keep texting if you need anything else. You will be notified as soon as help is here.",
         },
-        ...(locationSelection
-            ? [{
-                id: "location-selection",
-                sender: "statefarm",
-                text: `You chose ${locationSelection.trailerName} (${locationSelection.distanceMiles.toFixed(1)} miles away). You answered ${locationSelection.canTravel ? "yes: you are able" : "no: you are not able"} to get there by yourself.`,
-            }]
-            : []),
-        ...(locationSelection
-            ? [{
-                id: "location-address",
-                sender: "statefarm",
-                text: `The address is: ${locationSelection.address}`,
-            }]
-            : []),
-    ]);
+        ...sentMessages,
+    ];
 
     // Stores the user's current input
     const [input, setInput] = useState("");
@@ -97,7 +98,7 @@ export function Chat({ locationSelection }: ChatProps) {
         };
 
         // Add the message to the conversation
-        setMessages((prevMessages: Message[]) => [
+        setSentMessages((prevMessages: Message[]) => [
             ...prevMessages,
             newMessage,
         ]);

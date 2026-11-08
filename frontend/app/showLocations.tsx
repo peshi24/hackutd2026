@@ -1,5 +1,5 @@
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
     StyleSheet,
@@ -10,11 +10,11 @@ import {
     Alert,
     ActivityIndicator,
     Dimensions,
-    Linking,
     Platform,
 } from "react-native";
 
 import * as Location from "expo-location";
+import LocationMap from "../components/LocationMap";
 
 // Get screen dimensions
 const { height } = Dimensions.get("window");
@@ -129,6 +129,21 @@ const getStatus = (available: number, capacity: number) => {
     return "Available";
 };
 
+const getStatusColor = (status: string) => {
+    switch (status) {
+        case "Available":
+            return "#2E8B57";
+        case "Moderate":
+            return "#D99A24";
+        case "Limited":
+            return "#E47736";
+        case "Full":
+            return "#C94C4C";
+        default:
+            return "#808080";
+    }
+};
+
 export default function ShowLocations({
     onSelectionComplete,
 }: ShowLocationsProps) {
@@ -147,6 +162,18 @@ export default function ShowLocations({
 
     // Loading state
     const [loading, setLoading] = useState(true);
+
+    const mapLocations = useMemo(
+        () =>
+            nearbyTrailers.map((trailer) => ({
+                id: trailer.id,
+                latitude: trailer.latitude,
+                longitude: trailer.longitude,
+                status: trailer.status,
+                color: getStatusColor(trailer.status),
+            })),
+        [nearbyTrailers],
+    );
 
     const getUserLocation = useCallback(async () => {
         try {
@@ -212,27 +239,6 @@ export default function ShowLocations({
         void Promise.resolve().then(getUserLocation);
     }, [getUserLocation]);
 
-    // Status colors
-    const getStatusColor = (status: string) => {
-
-        switch (status) {
-            case "Available":
-                return "#2E8B57";
-
-            case "Moderate":
-                return "#D99A24";
-
-            case "Limited":
-                return "#E47736";
-
-            case "Full":
-                return "#C94C4C";
-
-            default:
-                return "#808080";
-        }
-    };
-
     // Select a trailer
     const handleSelect = (id: string) => {
         setSelectedTrailer(id);
@@ -242,7 +248,7 @@ export default function ShowLocations({
         trailer: TrailerWithDistance,
         canTravel: boolean
     ) => {
-        let address = `Coordinates: ${trailer.latitude.toFixed(5)}, ${trailer.longitude.toFixed(5)}`;
+        let address = `${trailer.latitude.toFixed(5)}, ${trailer.longitude.toFixed(5)}`;
 
         try {
             const [geocodedAddress] = await Location.reverseGeocodeAsync({
@@ -287,24 +293,6 @@ export default function ShowLocations({
             longitude: trailer.longitude,
         });
 
-        if (!canTravel) return;
-
-        const coordinates = `${trailer.latitude},${trailer.longitude}`;
-        const mapsUrl = Platform.OS === "ios"
-            ? `https://maps.apple.com/?ll=${coordinates}&q=${encodeURIComponent(address)}`
-            : Platform.OS === "android"
-                ? `geo:${coordinates}?q=${coordinates}(${encodeURIComponent(address)})`
-                : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${address} (${coordinates})`)}`;
-
-        try {
-            await Linking.openURL(mapsUrl);
-        } catch (error) {
-            console.error("Unable to open maps for the selected location:", error);
-            Alert.alert(
-                "Unable to Open Maps",
-                "The location is shown in chat, but no maps application could be opened."
-            );
-        }
     };
 
     // Submit selected trailer
@@ -326,10 +314,20 @@ export default function ShowLocations({
 
         const trailerName = `Trailer ${trailer.id}`;
 
+        const prompt = `You selected ${trailerName}, approximately ${trailer.distance.toFixed(1)} miles away. Are you able to get there by yourself?`;
+
+        if (Platform.OS === "web") {
+            const canTravel = window.confirm(
+                `${prompt}\n\nChoose OK if you can get there, or Cancel if you need help.`,
+            );
+            void handleLocationAnswer(trailer, canTravel);
+            return;
+        }
+
         // Ask if user can reach the selected trailer
         Alert.alert(
             "Can You Get There?",
-            `You selected ${trailerName}, approximately ${trailer.distance.toFixed(1)} miles away. Are you able to get there by yourself?`,
+            prompt,
             [
                 {
                     text: "Yes",
@@ -393,14 +391,13 @@ export default function ShowLocations({
                 </Text>
             </View>
 
-            {/* Temporary map bypass: keep the native maps module out of the bundle.
-                The location cards below still support selecting a trailer. */}
             <View style={styles.mapContainer}>
-                <View style={[styles.map, { justifyContent: "center", alignItems: "center", padding: 20 }]}>
-                    <Text style={styles.text}>
-                        Map preview is temporarily unavailable. Select a location below.
-                    </Text>
-                </View>
+                <LocationMap
+                    userLocation={userLocation}
+                    locations={mapLocations}
+                    selectedLocationId={selectedTrailer}
+                    onLocationSelect={handleSelect}
+                />
             </View>
 
             {/* Location cards section */}

@@ -1,30 +1,24 @@
 
-import React, { useState } from 'react';
+import React from 'react';
+import { router } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 import { Popup } from '../components/modal';
-import ShowLocations from './showLocations';
 
 export default function Home() {
-    const [showLocation, setshowLocation] = useState(false);
-
     // Handles the user's selection
     const handleOptionPress = (option: string) => {
         console.log("User selected:", option);
-        if(option == "need help" || option == "urgent") {
-            setshowLocation(true);
+        if(option === "need help" || option === "urgent") {
+            router.push("/showLocations");
         }
     };
-
-    if (showLocation) {
-        return <ShowLocations onSelectionComplete={() => {}} />;
-    }
 
     return (
         <View style={styles.container}>
             <Popup
                 isOpen={true}
                 onOptionPress={handleOptionPress}
-                onClose={() => setshowLocation(true)}
+                onClose={() => router.push("/showLocations")}
             />
         </View>
     );

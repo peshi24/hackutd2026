@@ -33,7 +33,17 @@ export default function Login() {
             >
                 {/* Main login content */}
                 <View style={styles.content}>
-                    {/* Hosted sign-in button */}
+                    <TextInput
+                        style={styles.input}
+                        value={email}
+                        onChangeText={setEmail}
+                        placeholder="Email address (optional)"
+                        placeholderTextColor="#666"
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoComplete="email"
+                        accessibilityLabel="Email address"
+                    />
                     <TouchableOpacity
                         style={styles.button}
                         onPress={() => void signIn()}
@@ -41,16 +51,24 @@ export default function Login() {
                         accessibilityState={{ disabled: busy || !ready, busy }}
                     >
                         <Text style={styles.buttonText}>
-                            {busy ? "Signing in..." : "Click on this button for login"}
+                            {busy
+                                ? "Signing in..."
+                                : ready
+                                    ? "Sign in"
+                                    : "Preparing sign-in..."}
                         </Text>
                     </TouchableOpacity>
-
+                    {error ? (
+                        <Text accessibilityRole="alert" style={styles.errorText}>
+                            {error}
+                        </Text>
+                    ) : null}
                 </View>
                 <Text style={styles.smallText}>
                     Welcome to
                 </Text>
                 <Text style={styles.bigText}>
-                    WeatherTogether
+                    NeighborAlert
                 </Text>
             </KeyboardAvoidingView>
         </ImageBackground>
@@ -143,6 +161,13 @@ const styles = StyleSheet.create({
         color: "#E31837",
         fontSize: 17,
         fontWeight: "bold",
+    },
+
+    errorText: {
+        color: "#fff",
+        fontSize: 14,
+        marginTop: 16,
+        textAlign: "center",
     },
 
 });

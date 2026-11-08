@@ -11,20 +11,17 @@ import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { connectExistingAccount } from "../../backend/client/login";
 import type { AccountProfile } from "../../backend/client/module_bindings/types";
+import {
+  authorizationSkipped,
+  getSpacetimeAuthConfig,
+  redirectUri,
+  SPACETIME_AUTH_ISSUER,
+} from "../services/spacetimeAuth";
 
 WebBrowser.maybeCompleteAuthSession();
 
-const issuer = "https://auth.spacetimedb.com/oidc";
-const clientId = process.env.EXPO_PUBLIC_SPACETIMEAUTH_CLIENT_ID ?? "";
-
-
-export const redirectUri =
-  Platform.OS === "web" && !__DEV__
-    ? "https://hackutd2026.vercel.app/callback"
-    : AuthSession.makeRedirectUri({
-        scheme: "neighboralert",
-        path: "callback",
-      });
+const authConfig = getSpacetimeAuthConfig();
+const clientId = authConfig?.clientId ?? "";
 
 const TOKEN_KEY = "neighboralert_auth_token";
 const EXPIRY_KEY = "neighboralert_auth_expiry";
@@ -69,6 +66,8 @@ type AuthState = {
   setEmail: (email: string) => void;
   busy: boolean;
   ready: boolean;
+  restoring: boolean;
+  authorizationSkipped: boolean;
   error: string | null;
   connection: AccountSession["connection"] | null;
   signIn: () => Promise<void>;
@@ -84,9 +83,9 @@ export function SessionProvider({
   const [user, setUser] = useState<AccountProfile | null>(null);
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
-  const [restoring, setRestoring] = useState(true);
+  const [restoring, setRestoring] = useState(!authorizationSkipped);
   const [error, setError] = useState<string | null>(
-    clientId
+    authorizationSkipped || clientId
       ? null
       : "Sign-in is not configured yet. Please contact the app team."
   );
@@ -117,7 +116,9 @@ export function SessionProvider({
     const remaining = expiresAt - Date.now();
 
     if (remaining <= 0) {
-      void clearSavedSession();
+      void clearSavedSession().catch((cause) => {
+        console.warn("Could not clear expired session:", cause);
+      });
       disconnect();
       setError("Your session expired. Please sign in again.");
       return;
@@ -126,7 +127,9 @@ export function SessionProvider({
     expiry.current = setTimeout(() => {
       if (session.current !== account) return;
 
-      void clearSavedSession();
+      void clearSavedSession().catch((cause) => {
+        console.warn("Could not clear expired session:", cause);
+      });
       disconnect();
       setError("Your session expired. Please sign in again.");
     }, Math.min(remaining, 2147483647));
@@ -149,6 +152,9 @@ export function SessionProvider({
       onDisconnect: () => {
         if (session.current !== account) return;
 
+        void clearSavedSession().catch((cause) => {
+          console.warn("Could not clear disconnected session:", cause);
+        });
         clearTimeout(expiry.current);
         session.current = null;
         setConnection(null);
@@ -181,11 +187,11 @@ export function SessionProvider({
 
   // Load OpenID Connect configuration.
   useEffect(() => {
-    if (!clientId) return;
+    if (!clientId || authorizationSkipped) return;
 
     let active = true;
 
-    AuthSession.fetchDiscoveryAsync(issuer)
+    AuthSession.fetchDiscoveryAsync(SPACETIME_AUTH_ISSUER)
       .then((value) => {
         if (active) setDiscovery(value);
       })
@@ -207,7 +213,7 @@ export function SessionProvider({
       clientId,
       redirectUri,
       responseType: AuthSession.ResponseType.Code,
-      scopes: ["openid", "profile", "email"],
+      scopes: authConfig?.scopes ?? [],
       usePKCE: true,
       extraParams: {
         prompt: "login",
@@ -216,11 +222,16 @@ export function SessionProvider({
           : {}),
       },
     },
-    clientId ? discovery : null
+    clientId && !authorizationSkipped ? discovery : null
   );
 
   // Restore a previously saved session.
   useEffect(() => {
+    if (authorizationSkipped) {
+      setRestoring(false);
+      return;
+    }
+
     let active = true;
 
     async function restoreSession() {
@@ -243,8 +254,13 @@ export function SessionProvider({
         await connectWithToken(token, expiresAt);
       } catch (cause) {
         if (active) {
-          await clearSavedSession();
+          try {
+            await clearSavedSession();
+          } catch (storageCause) {
+            console.warn("Could not clear restored session:", storageCause);
+          }
           disconnect();
+          setError("Could not restore your session. Please sign in again.");
           console.warn("Session restoration failed:", cause);
         }
       } finally {
@@ -269,7 +285,7 @@ export function SessionProvider({
   }, []);
 
   async function signIn() {
-    if (pending.current || restoring) return;
+    if (authorizationSkipped || pending.current || restoring) return;
 
     if (!clientId) {
       setError(
@@ -296,6 +312,15 @@ export function SessionProvider({
       ) {
         setError("Sign-in cancelled. Select Sign in to retry.");
         return;
+      }
+
+      if (result.type === "error") {
+        throw new Error(
+          result.params.error_description ??
+            result.params.error ??
+            result.error?.message ??
+            "Authorization failed. Please try again."
+        );
       }
 
       if (
@@ -336,7 +361,11 @@ export function SessionProvider({
       await saveValue(EXPIRY_KEY, String(expiresAt));
     } catch (cause) {
       disconnect();
-      await clearSavedSession();
+      try {
+        await clearSavedSession();
+      } catch (storageCause) {
+        console.warn("Could not clear failed sign-in:", storageCause);
+      }
 
       const message =
         cause instanceof Error
@@ -389,7 +418,11 @@ export function SessionProvider({
         busy: busy || restoring,
         error,
         connection,
-        ready: !restoring && !!clientId && !!request && !!discovery,
+        ready:
+          authorizationSkipped ||
+          (!restoring && !!clientId && !!request && !!discovery),
+        restoring,
+        authorizationSkipped,
         signIn,
       }}
     >
