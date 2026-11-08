@@ -1,0 +1,5 @@
+{
+  "server": "http://127.0.0.1:3107",
+  "module-path": "./spacetimedb",
+  "generate": [{ "language": "typescript", "out-dir": "./client/module_bindings" }]
+}
