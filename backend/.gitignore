@@ -1,0 +1,4 @@
+.spacetime/
+spacetimedb/dist/
+spacetime.local.json
+.test-client/
