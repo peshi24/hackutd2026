@@ -6,31 +6,43 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import AcknowledgeRequestReducer from "../acknowledge_request_reducer";
+import AssessRequestUrgencyReducer from "../assess_request_urgency_reducer";
 import AssignResourceReducer from "../assign_resource_reducer";
+import CompleteIntakeReducer from "../complete_intake_reducer";
 import CreateAssistanceRequestReducer from "../create_assistance_request_reducer";
 import CreateDisasterReducer from "../create_disaster_reducer";
 import CreateOrganizationReducer from "../create_organization_reducer";
 import CreateResourceReducer from "../create_resource_reducer";
+import InitializeRequestReviewsReducer from "../initialize_request_reviews_reducer";
 import RegisterIntegrationResidentReducer from "../register_integration_resident_reducer";
 import RegisterUserReducer from "../register_user_reducer";
 import ReleaseAssignmentReducer from "../release_assignment_reducer";
+import SaveIntakeMessageReducer from "../save_intake_message_reducer";
 import SaveMessageReducer from "../save_message_reducer";
 import SeedDevelopmentReducer from "../seed_development_reducer";
 import SetAccessReducer from "../set_access_reducer";
+import StartIntakeReducer from "../start_intake_reducer";
 import UpdateRequestStatusReducer from "../update_request_status_reducer";
 import UpdateResourceAvailabilityReducer from "../update_resource_availability_reducer";
 
+export type AcknowledgeRequestParams = __Infer<typeof AcknowledgeRequestReducer>;
+export type AssessRequestUrgencyParams = __Infer<typeof AssessRequestUrgencyReducer>;
 export type AssignResourceParams = __Infer<typeof AssignResourceReducer>;
+export type CompleteIntakeParams = __Infer<typeof CompleteIntakeReducer>;
 export type CreateAssistanceRequestParams = __Infer<typeof CreateAssistanceRequestReducer>;
 export type CreateDisasterParams = __Infer<typeof CreateDisasterReducer>;
 export type CreateOrganizationParams = __Infer<typeof CreateOrganizationReducer>;
 export type CreateResourceParams = __Infer<typeof CreateResourceReducer>;
+export type InitializeRequestReviewsParams = __Infer<typeof InitializeRequestReviewsReducer>;
 export type RegisterIntegrationResidentParams = __Infer<typeof RegisterIntegrationResidentReducer>;
 export type RegisterUserParams = __Infer<typeof RegisterUserReducer>;
 export type ReleaseAssignmentParams = __Infer<typeof ReleaseAssignmentReducer>;
+export type SaveIntakeMessageParams = __Infer<typeof SaveIntakeMessageReducer>;
 export type SaveMessageParams = __Infer<typeof SaveMessageReducer>;
 export type SeedDevelopmentParams = __Infer<typeof SeedDevelopmentReducer>;
 export type SetAccessParams = __Infer<typeof SetAccessReducer>;
+export type StartIntakeParams = __Infer<typeof StartIntakeReducer>;
 export type UpdateRequestStatusParams = __Infer<typeof UpdateRequestStatusReducer>;
 export type UpdateResourceAvailabilityParams = __Infer<typeof UpdateResourceAvailabilityReducer>;
 
