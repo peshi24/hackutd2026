@@ -17,10 +17,14 @@ WebBrowser.maybeCompleteAuthSession();
 const issuer = "https://auth.spacetimedb.com/oidc";
 const clientId = process.env.EXPO_PUBLIC_SPACETIMEAUTH_CLIENT_ID ?? "";
 
-export const redirectUri = AuthSession.makeRedirectUri({
-  scheme: "neighboralert",
-  path: "callback",
-});
+
+export const redirectUri =
+  Platform.OS === "web" && !__DEV__
+    ? "https://hackutd2026.vercel.app/callback"
+    : AuthSession.makeRedirectUri({
+        scheme: "neighboralert",
+        path: "callback",
+      });
 
 const TOKEN_KEY = "neighboralert_auth_token";
 const EXPIRY_KEY = "neighboralert_auth_expiry";
