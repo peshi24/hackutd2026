@@ -74,6 +74,15 @@ const message = table(
     createdAt: t.timestamp(),
   },
 );
+const sessionNote = table(
+  { name: "session_note" },
+  {
+    id: t.u64().primaryKey().autoInc(),
+    userId: t.string().index("btree"),
+    notes: t.string(),
+    updatedAt: t.timestamp(),
+  },
+);
 const organization = table(
   { name: "organization", public: true },
   {
@@ -221,6 +230,7 @@ const db = schema(
     disaster,
     assistanceRequest,
     message,
+    sessionNote,
     organization,
     resource,
     resourceAssignment,
