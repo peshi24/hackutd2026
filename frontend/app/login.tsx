@@ -1,5 +1,5 @@
 
-import React, { useState } from "react";
+import React from "react";
 import {
     StyleSheet,
     View,
@@ -11,26 +11,12 @@ import {
     Platform,
 } from "react-native";
 
-import { useRouter } from "expo-router";
+import { useSession } from "../auth/Session";
 
 const backgroundImage = require("../assets/background.png");
 
 export default function Login() {
-    // Store the user's email address
-    const [email, setEmail] = useState("");
-
-    // Initialize navigation
-    const router = useRouter();
-
-    // Navigate to authorization when the user submits their email
-    const handleSubmit = () => {
-        if (!email.trim()) {
-            alert("Please enter your email address.");
-            return;
-        }
-
-        router.push("/authorization");
-    };
+    const { email, setEmail, signIn, busy, ready, error } = useSession();
 
     return (
         <View style={styles.overlay}>
@@ -57,15 +43,22 @@ export default function Login() {
                         keyboardType="email-address"
                         autoCapitalize="none"
                         autoCorrect={false}
+                        editable={!busy}
                     />
 
+                    {error ? <Text accessibilityRole="alert" style={{ color: "white", marginBottom: 12 }}>{error}</Text> : null}
+                    <Text style={{ color: "white", marginBottom: 12 }}>
+                        {busy ? "Complete email sign-in in the browser, then return here." : !ready ? "Waiting for sign-in configuration or connection?" : "Continue to secure email sign-in."}
+                    </Text>
                     {/* Submit button */}
                     <TouchableOpacity
                         style={styles.button}
-                        onPress={handleSubmit}
+                        onPress={() => void signIn()}
+                        disabled={busy || !ready}
+                        accessibilityState={{ disabled: busy || !ready, busy }}
                     >
                         <Text style={styles.buttonText}>
-                            Submit
+                            {busy ? "Signing in?" : "Submit"}
                         </Text>
                     </TouchableOpacity>
 
