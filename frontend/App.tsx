@@ -1,11 +1,20 @@
+import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Login from './app/login';
-import Home from './app/home';
+import { Chat } from './app/chat';
+import ShowLocations from './app/showLocations';
+import type { LocationSelection } from './app/showLocations';
 
 export default function App() {
+  const [locationSelection, setLocationSelection] =
+    useState<LocationSelection | null>(null);
+
   return (
     <View style={styles.container}>
-      <Home />
+      {locationSelection ? (
+        <Chat locationSelection={locationSelection} />
+          ) : (
+        <ShowLocations onSelectionComplete={setLocationSelection} />
+      )}
     </View>
   );
 }

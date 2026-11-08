@@ -14,6 +14,7 @@ import {
 
 // Import the Navbar component
 import Navbar from "../components/navbar";
+import type { LocationSelection } from "./showLocations";
 
 type Message = {
     id: string;
@@ -21,10 +22,14 @@ type Message = {
     text: string;
 };
 
-export function Chat() {
+type ChatProps = {
+    locationSelection?: LocationSelection;
+};
+
+export function Chat({ locationSelection }: ChatProps) {
 
     // Sample conversation (will eventually come from backend)
-    const [messages, setMessages] = useState<Message[]>([
+    const [messages, setMessages] = useState<Message[]>(() => [
         {
             id: "1",
             sender: "statefarm",
@@ -55,6 +60,20 @@ export function Chat() {
             sender: "statefarm",
             text: "Please keep texting if you need anything else. You will be notified as soon as help is here.",
         },
+        ...(locationSelection
+            ? [{
+                id: "location-selection",
+                sender: "statefarm",
+                text: `You chose ${locationSelection.trailerName} (${locationSelection.distanceMiles.toFixed(1)} miles away). You answered ${locationSelection.canTravel ? "yes: you are able" : "no: you are not able"} to get there by yourself.`,
+            }]
+            : []),
+        ...(locationSelection
+            ? [{
+                id: "location-address",
+                sender: "statefarm",
+                text: `The address is: ${locationSelection.address}`,
+            }]
+            : []),
     ]);
 
     // Stores the user's current input
