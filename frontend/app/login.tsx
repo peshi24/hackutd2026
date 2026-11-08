@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
     // Welcome text
     smallText: {
         position: "absolute",
-        top: 140,
+        top: 150,
         left: 0,
         right: 0,
         textAlignVertical: "top",
