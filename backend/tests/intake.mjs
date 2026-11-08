@@ -173,7 +173,7 @@ try {
     needs: "Water",
     latitude: 32.95,
     longitude: -96.73,
-    reportedUrgent: true,
+    urgencyScore: 4,
   };
   await ai.conn.reducers.completeIntake(completion);
   await ai.conn.reducers.completeIntake(completion);
@@ -183,7 +183,7 @@ try {
   );
   const requestId = [...ai.conn.db.visibleIntakeSessions.iter()][0].requestId;
   await until(() => resident.conn.db.visibleRequests.count() === 1n);
-  assert.equal([...resident.conn.db.visibleRequests.iter()][0].urgent, true);
+  assert.equal([...resident.conn.db.visibleRequests.iter()][0].urgencyScore, 4);
   await until(() =>
     [...ai.conn.db.visibleRequestReviews.iter()].some(
       (r) => r.requestId === requestId,
@@ -193,16 +193,16 @@ try {
     [...ai.conn.db.visibleRequestReviews.iter()].find(
       (r) => r.requestId === requestId,
     );
-  assert.equal(review().assessedUrgent, undefined);
+  assert.equal(review().urgencyScore, 4);
   await assert.rejects(
-    resident.conn.reducers.assessRequestUrgency({ requestId, urgent: true }),
+    resident.conn.reducers.assessRequestUrgency({ requestId, urgencyScore: 5 }),
   );
   await assert.rejects(
-    otherAi.conn.reducers.assessRequestUrgency({ requestId, urgent: true }),
+    otherAi.conn.reducers.assessRequestUrgency({ requestId, urgencyScore: 5 }),
   );
   grant(ai.identity, "integration");
   await assert.rejects(
-    ai.conn.reducers.assessRequestUrgency({ requestId, urgent: true }),
+    ai.conn.reducers.assessRequestUrgency({ requestId, urgencyScore: 5 }),
   );
   await assert.rejects(
     ai.conn.reducers.saveIntakeMessage({
@@ -211,8 +211,8 @@ try {
     }),
   );
   grant(ai.identity, "ai");
-  await ai.conn.reducers.assessRequestUrgency({ requestId, urgent: false });
-  await until(() => review()?.assessedUrgent === false);
+  await ai.conn.reducers.assessRequestUrgency({ requestId, urgencyScore: 2 });
+  await until(() => review()?.urgencyScore === 2);
   assert.ok(review().assessedBy.equals(ai.identity));
   await until(() => review()?.followUpRequired === true);
   await assert.rejects(

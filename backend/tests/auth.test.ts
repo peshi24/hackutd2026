@@ -63,7 +63,6 @@ describe("existing-account authentication", () => {
     const { test, run, prepopulate } = setup();
     const account = prepopulate(" Alice@Example.com ");
     const alice = principal("alice", { email: "ALICE@example.com" });
-    run(alice, (ctx) => m.validateAccountConnection(ctx, {}));
     expect(m.myProfile(test.viewContext(alice), {})).toEqual([]);
     run(alice, (ctx) => m.loginExistingUser(ctx, {}));
     run(alice, (ctx) => m.loginExistingUser(ctx, {}));
@@ -125,7 +124,7 @@ describe("existing-account authentication", () => {
     prepopulate("alice@example.com");
     const auth = principal("alice", claims);
     expect(() =>
-      run(auth, (ctx) => m.validateAccountConnection(ctx, {})),
+      run(auth, (ctx) => m.loginExistingUser(ctx, {})),
     ).toThrow();
     expect(() => run(auth, (ctx) => m.loginExistingUser(ctx, {}))).toThrow();
     expect([...test.db.user.iter()][0].identity).toBeUndefined();
@@ -156,7 +155,7 @@ describe("existing-account authentication", () => {
     ).toThrow("already linked");
     expect(() =>
       run(principal("alice", { aud: "wrong" }), (ctx) =>
-        m.validateAccountConnection(ctx, {}),
+        m.loginExistingUser(ctx, {}),
       ),
     ).toThrow();
     expect(test.db.user.id.find(alice.id)?.email).toBe("alice@example.com");
@@ -234,7 +233,6 @@ describe("existing-account authentication", () => {
     run(owner, (ctx) =>
       m.setAccess(ctx, { identity: serviceIdentity, role: "ai" }),
     );
-    run(ai, (ctx) => m.validateAccountConnection(ctx, {}));
     run(ai, (ctx) =>
       m.startIntake(ctx, {
         externalId: "sms-1",
@@ -262,19 +260,21 @@ describe("existing-account authentication", () => {
         needs: "Water",
         latitude: 32.94,
         longitude: -96.74,
-        reportedUrgent: false,
+        urgencyScore: 3,
       }),
     );
     const requestId = test.db.intakeSession.id.find(session.id)!.requestId!;
-    run(ai, (ctx) => m.assessRequestUrgency(ctx, { requestId, urgent: true }));
-    expect(
-      test.db.requestReview.requestId.find(requestId)?.assessedUrgent,
-    ).toBe(true);
+    run(ai, (ctx) =>
+      m.assessRequestUrgency(ctx, { requestId, urgencyScore: 5 }),
+    );
+    expect(test.db.requestReview.requestId.find(requestId)?.urgencyScore).toBe(
+      5,
+    );
     run(owner, (ctx) =>
       m.setAccess(ctx, { identity: serviceIdentity, role: "none" }),
     );
     expect(() =>
-      run(ai, (ctx) => m.validateAccountConnection(ctx, {})),
+      run(ai, (ctx) => m.updateIntakeLocation(ctx, { sessionId: session.id, latitude: 32.94, longitude: -96.74 })),
     ).toThrow();
     expect(m.visibleIntakeSessions(test.viewContext(ai), {})).toEqual([]);
   });
@@ -312,4 +312,164 @@ describe("existing-account authentication", () => {
       test.db.requestReview.requestId.find(requests[1].id)?.followUpRequired,
     ).toBe(true);
   });
+});
+
+describe("urgency scores and demo refresh", () => {
+  it("requires valid intake scores and lets only the owning AI assess", () => {
+    const { test, run } = setup();
+    run(owner, (ctx) => m.seedDevelopment(ctx, {}));
+    const ai = principal("scoring-ai");
+    const otherAi = principal("other-scoring-ai");
+    for (const service of [ai, otherAi]) {
+      const identity = test.viewContext(service).sender;
+      run(owner, (ctx) => m.setAccess(ctx, { identity, role: "ai" }));
+    }
+    run(ai, (ctx) =>
+      m.startIntake(ctx, {
+        externalId: "score-test",
+        userId: undefined,
+        name: "SMS test",
+        phone: undefined,
+      }),
+    );
+    const session = m.visibleIntakeSessions(test.viewContext(ai), {})[0];
+    const disasterId = [...test.db.disaster.iter()][0].id;
+    const args = {
+      sessionId: session.id,
+      disasterId,
+      needs: "Insurance claim",
+      latitude: 32.94,
+      longitude: -96.74,
+      urgencyScore: 1,
+    };
+    for (const urgencyScore of [0, 6, 1.5]) {
+      expect(() =>
+        run(ai, (ctx) => m.completeIntake(ctx, { ...args, urgencyScore })),
+      ).toThrow();
+      expect(() =>
+        run(ai, (ctx) =>
+          m.createAssistanceRequest(ctx, {
+            ...args,
+            userId: session.userId,
+            urgencyScore,
+          }),
+        ),
+      ).toThrow();
+    }
+    run(ai, (ctx) => m.completeIntake(ctx, args));
+    const requestId = test.db.intakeSession.id.find(session.id)!.requestId!;
+    expect(test.db.assistanceRequest.id.find(requestId)?.urgencyScore).toBe(1);
+    expect(() =>
+      run(otherAi, (ctx) =>
+        m.assessRequestUrgency(ctx, { requestId, urgencyScore: 5 }),
+      ),
+    ).toThrow("AI may assess only its intake requests");
+    run(ai, (ctx) =>
+      m.assessRequestUrgency(ctx, { requestId, urgencyScore: 4 }),
+    );
+    expect(test.db.assistanceRequest.id.find(requestId)?.urgencyScore).toBe(4);
+    expect(test.db.requestReview.requestId.find(requestId)?.urgencyScore).toBe(
+      4,
+    );
+  });
+  it("validates scores, preserves authorization, and synchronizes assessments", () => {
+    const { test, run } = setup();
+    run(owner, (ctx) => m.seedDevelopment(ctx, {}));
+    const request = [...test.db.assistanceRequest.iter()][0];
+    for (const urgencyScore of [0, 6, 1.5, NaN]) {
+      expect(() =>
+        run(owner, (ctx) =>
+          m.assessRequestUrgency(ctx, { requestId: request.id, urgencyScore }),
+        ),
+      ).toThrow();
+    }
+    expect(() =>
+      run(principal("stranger"), (ctx) =>
+        m.assessRequestUrgency(ctx, { requestId: request.id, urgencyScore: 5 }),
+      ),
+    ).toThrow();
+    for (const urgencyScore of [1, 2, 3, 4, 5]) {
+      run(owner, (ctx) =>
+        m.assessRequestUrgency(ctx, { requestId: request.id, urgencyScore }),
+      );
+      expect(test.db.assistanceRequest.id.find(request.id)?.urgencyScore).toBe(
+        urgencyScore,
+      );
+      expect(
+        test.db.requestReview.requestId.find(request.id)?.urgencyScore,
+      ).toBe(urgencyScore);
+    }
+  });
+  it("refreshes only seed-owned requests once and preserves references and capacity", () => {
+    const { test, run } = setup();
+    run(owner, (ctx) => m.seedDevelopment(ctx, {}));
+    // Model the pre-score seed version, which has no upgrade markers.
+    run(owner, ctx => {
+      for (const msg of [...ctx.db.intakeMessage.iter()])
+        if (msg.id.endsWith(":urgency-v2")) ctx.db.intakeMessage.id.delete(msg.id);
+    });
+    const before = [...test.db.assistanceRequest.iter()];
+    const resource = [...test.db.resource.iter()][0];
+    // Another request for the same fictional resident is not a seed-owned request.
+    run(owner, (ctx) =>
+      ctx.db.assistanceRequest.insert({
+        ...before[0],
+        id: 0n,
+        needs: "Keep this request",
+      }),
+    );
+    run(owner, (ctx) =>
+      m.assignResource(ctx, {
+        requestId: before[0].id,
+        resourceId: resource.id,
+        quantity: 1,
+      }),
+    );
+    run(owner, (ctx) => m.seedUpdatedDevelopment(ctx, {}));
+    const ids = [...test.db.assistanceRequest.iter()].map((r) => r.id);
+    run(owner, (ctx) => m.seedUpdatedDevelopment(ctx, {}));
+    expect([...test.db.assistanceRequest.iter()].map((r) => r.id)).toEqual(ids);
+    expect(ids).toHaveLength(11);
+    expect(before.every((r) => !test.db.assistanceRequest.id.find(r.id))).toBe(
+      true,
+    );
+    expect(
+      [...test.db.assistanceRequest.iter()].some(
+        (r) => r.needs === "Keep this request",
+      ),
+    ).toBe(true);
+    expect(
+      new Set([...test.db.assistanceRequest.iter()].map((r) => r.urgencyScore))
+        .size,
+    ).toBe(5);
+    expect(test.db.resource.id.find(resource.id)?.allocated).toBe(0);
+    expect(test.db.user.count()).toBe(10n);
+    expect(test.db.disaster.count()).toBe(1n);
+    expect(test.db.resource.count()).toBe(20n);
+    for (const session of test.db.intakeSession.iter())
+      expect(
+        test.db.assistanceRequest.id.find(session.requestId!),
+      ).toBeDefined();
+    for (const review of test.db.requestReview.iter())
+      expect(test.db.assistanceRequest.id.find(review.requestId)).toBeDefined();
+    for (const timer of test.db.followUpTimer.iter())
+      expect(test.db.assistanceRequest.id.find(timer.requestId)).toBeDefined();
+  });
+});
+
+
+it("does not reset fresh score fixtures or guess missing demo provenance", () => {
+  const { test, run } = setup();
+  run(owner, ctx => m.seedDevelopment(ctx, {}));
+  const request = [...test.db.assistanceRequest.iter()][0];
+  const resource = [...test.db.resource.iter()][0];
+  run(owner, ctx => m.assignResource(ctx, { requestId: request.id, resourceId: resource.id, quantity: 1 }));
+  run(owner, ctx => m.seedUpdatedDevelopment(ctx, {}));
+  expect(test.db.assistanceRequest.id.find(request.id)?.status).toBe("in_progress");
+  expect(test.db.resource.id.find(resource.id)?.allocated).toBe(1);
+  const session = [...test.db.intakeSession.iter()][0];
+  run(owner, ctx => ctx.db.intakeSession.id.delete(session.id));
+  expect(() => run(owner, ctx => m.seedUpdatedDevelopment(ctx, {}))).toThrow("all 10 original");
+  expect(test.db.assistanceRequest.count()).toBe(10n);
+  expect(test.db.resource.id.find(resource.id)?.allocated).toBe(1);
 });

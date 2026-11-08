@@ -12,7 +12,7 @@ import {
 
 export default __t.row({
   requestId: __t.u64().primaryKey().name("request_id"),
-  assessedUrgent: __t.option(__t.bool()).name("assessed_urgent"),
+  urgencyScore: __t.u8().name("urgency_score"),
   assessedBy: __t.option(__t.identity()).name("assessed_by"),
   assessedAt: __t.option(__t.timestamp()).name("assessed_at"),
   acknowledgedBy: __t.option(__t.identity()).name("acknowledged_by"),
