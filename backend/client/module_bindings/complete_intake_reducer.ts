@@ -16,5 +16,5 @@ export default {
   needs: __t.string(),
   latitude: __t.f64(),
   longitude: __t.f64(),
-  reportedUrgent: __t.bool(),
+  urgencyScore: __t.u8(),
 };

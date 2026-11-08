@@ -7,7 +7,6 @@ import {
   type ReducerCtx,
 } from "spacetimedb/server";
 import { ScheduleAt, Timestamp } from "spacetimedb";
-
 const user = table(
   {
     name: "user",
@@ -60,6 +59,8 @@ const assistanceRequest = table(
     status: t.string(),
     createdAt: t.timestamp(),
     updatedAt: t.timestamp(),
+    urgencyScore: t.u8().default(3),
+    queuePosition: t.u32().default(0),
   },
 );
 const message = table(
@@ -155,6 +156,7 @@ const requestReview = table(
     acknowledgedAt: t.option(t.timestamp()),
     followUpAt: t.timestamp(),
     followUpRequired: t.bool(),
+    urgencyScore: t.u8().default(3),
   },
 );
 const followUpTimer = table(
@@ -270,6 +272,10 @@ function text(value: string, max: number) {
     fail(`Text must contain 1-${max} characters`);
   return result;
 }
+function validateUrgencyScore(score: number) {
+  if (!Number.isInteger(score) || score < 1 || score > 5)
+    fail("Urgency score must be an integer from 1 to 5");
+}
 function coordinates(latitude: number, longitude: number) {
   if (
     !Number.isFinite(latitude) ||
@@ -285,7 +291,6 @@ function currentUser(ctx: Ctx) {
   if (!row || row.email !== email) fail("No account found for this email.");
   return row;
 }
-
 function normalizeEmail(email: string) {
   const result = email.trim().toLowerCase();
   if (result.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result))
@@ -315,21 +320,6 @@ function accountFor(ctx: ReadCtx) {
   );
   return rows.length === 1 ? rows[0] : undefined;
 }
-// Views are scoped by identity. Revalidate linked human identities on each new
-// connection so a token for another audience cannot reuse a previous binding.
-export const validateAccountConnection = db.clientConnected((ctx) => {
-  if (ctx.db.settings.id.find(1)?.admin.equals(ctx.sender)) return;
-  if (
-    ["ai", "integration"].includes(
-      ctx.db.access.identity.find(ctx.sender)?.role ?? "",
-    )
-  )
-    return;
-  const email = verifiedEmail(ctx);
-  const account = accountFor(ctx);
-  if (account && email !== account.email)
-    fail("No account found for this email.");
-});
 export const loginExistingUser = db.reducer((ctx) => {
   const email = verifiedEmail(ctx);
   const matches = [...ctx.db.user.email.filter(email)];
@@ -494,6 +484,34 @@ export const createOrganization = db.reducer(
     });
   },
 );
+// Queue is global across active requests. 0 means not in the queue.
+// Equal urgency uses original submission time, then request ID for stability.
+function recomputeQueuePositions(ctx: Ctx) {
+  const active = [...ctx.db.assistanceRequest.iter()]
+    .filter((r) => r.status === "open" || r.status === "in_progress")
+    .sort((a, b) =>
+      b.urgencyScore - a.urgencyScore ||
+      (a.createdAt.microsSinceUnixEpoch < b.createdAt.microsSinceUnixEpoch ? -1 :
+       a.createdAt.microsSinceUnixEpoch > b.createdAt.microsSinceUnixEpoch ? 1 :
+       a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    );
+  for (const [index, request] of active.entries()) {
+    const position = index + 1;
+    if (request.queuePosition !== position)
+      ctx.db.assistanceRequest.id.update({ ...request, queuePosition: position });
+  }
+  for (const request of ctx.db.assistanceRequest.iter()) {
+    if (request.status !== "open" && request.status !== "in_progress" && request.queuePosition !== 0)
+      ctx.db.assistanceRequest.id.update({ ...request, queuePosition: 0 });
+  }
+}
+
+// Run once after publishing to assign positions to existing requests.
+export const initializeQueuePositions = db.reducer((ctx) => {
+  admin(ctx);
+  recomputeQueuePositions(ctx);
+});
+
 export const createAssistanceRequest = db.reducer(
   {
     userId: t.option(t.u64()),
@@ -501,10 +519,11 @@ export const createAssistanceRequest = db.reducer(
     needs: t.string(),
     latitude: t.f64(),
     longitude: t.f64(),
-    urgent: t.bool(),
+    urgencyScore: t.u8(),
   },
   (ctx, args) => {
     coordinates(args.latitude, args.longitude);
+    validateUrgencyScore(args.urgencyScore);
     let userId: bigint;
     if (args.userId !== undefined) {
       integration(ctx);
@@ -515,6 +534,8 @@ export const createAssistanceRequest = db.reducer(
       fail("Active disaster required");
     const request = ctx.db.assistanceRequest.insert({
       ...args,
+      urgent: args.urgencyScore >= 4,
+      queuePosition: 0,
       id: 0n,
       userId,
       needs: text(args.needs, 2000),
@@ -523,6 +544,7 @@ export const createAssistanceRequest = db.reducer(
       updatedAt: ctx.timestamp,
     });
     ensureReview(ctx, request);
+    recomputeQueuePositions(ctx);
   },
 );
 export const updateRequestStatus = db.reducer(
@@ -554,6 +576,7 @@ export const updateRequestStatus = db.reducer(
       status: args.status,
       updatedAt: ctx.timestamp,
     });
+    recomputeQueuePositions(ctx);
   },
 );
 export const createResource = db.reducer(
@@ -699,7 +722,6 @@ export const saveMessage = db.reducer(
     });
   },
 );
-
 // Preserve the existing public view shape; email is private account lookup data.
 const accountProfile = t.row("AccountProfile", {
   id: t.u64().primaryKey(),
@@ -776,13 +798,6 @@ export const seedDevelopment = db.reducer((ctx) => {
     simulated: true,
     createdAt: ctx.timestamp,
   });
-  const needs = [
-    "Temporary hotel room",
-    "Trailer shelter",
-    "Accessible transportation",
-    "Food parcels",
-    "Drinking water",
-  ];
   for (let i = 0; i < 10; i++) {
     const u = ctx.db.user.insert({
       id: 0n,
@@ -793,20 +808,24 @@ export const seedDevelopment = db.reducer((ctx) => {
       role: "resident",
       fictional: true,
     });
+    validateUrgencyScore(demoRequests[i].urgencyScore);
     const request = ctx.db.assistanceRequest.insert({
       id: 0n,
       userId: u.id,
       disasterId: d.id,
-      needs: needs[i % 5],
+      needs: demoRequests[i].needs,
       latitude: 32.94 + i * 0.001,
       longitude: -96.75 + i * 0.002,
-      urgent: i % 3 === 0,
+      urgencyScore: demoRequests[i].urgencyScore,
+      urgent: demoRequests[i].urgencyScore >= 4,
+      queuePosition: 0,
       status: "open",
       createdAt: ctx.timestamp,
       updatedAt: ctx.timestamp,
     });
     ensureReview(ctx, request);
   }
+  recomputeQueuePositions(ctx);
   const kinds = ["hotel", "trailer", "vehicle", "food", "water"];
   const capacities = [12, 4, 8, 200, 500];
   const units = ["beds", "beds", "seats", "meal parcels", "liters"];
@@ -836,8 +855,58 @@ export const seedDevelopment = db.reducer((ctx) => {
   }
   ctx.db.settings.id.update({ ...config, seeded: true });
   seedUpdatedTables(ctx);
+  // Fresh score-based fixtures need no destructive refresh on a later seed call.
+  for (const session of ctx.db.intakeSession.iter()) {
+    if (
+      session.id !== `demo:intake:${session.userId}` ||
+      !session.owner.equals(ctx.databaseIdentity)
+    )
+      continue;
+    const initial = ctx.db.intakeMessage.id.find(`${session.id}:1`);
+    if (initial)
+      ctx.db.intakeMessage.insert({
+        ...initial,
+        id: `${session.id}:urgency-v2`,
+      });
+  }
 });
-
+// Scores are fixture data, not an AI classifier.
+const demoRequests = [
+  {
+    urgencyScore: 5,
+    needs: "Trapped beneath debris and unable to leave the house",
+  },
+  {
+    urgencyScore: 4,
+    needs: "Urgent medication replacement needed after evacuation",
+  },
+  {
+    urgencyScore: 3,
+    needs: "Family needs drinking water and food by this evening",
+  },
+  {
+    urgencyScore: 2,
+    needs: "Cleanup supplies needed for yard debris this weekend",
+  },
+  { urgencyScore: 1, needs: "Help filing an insurance claim for roof damage" },
+  {
+    urgencyScore: 5,
+    needs: "Severe injury after tornado; immediate assistance needed",
+  },
+  {
+    urgencyScore: 4,
+    needs: "Current shelter has structural damage and is unsafe",
+  },
+  {
+    urgencyScore: 3,
+    needs: "Temporary shelter and transportation needed tonight",
+  },
+  { urgencyScore: 2, needs: "Nonurgent replacement household supplies needed" },
+  {
+    urgencyScore: 1,
+    needs: "Insurance paperwork and general recovery information",
+  },
+];
 const demoResidentNames = [
   "Jordan Parker",
   "Taylor Reed",
@@ -850,15 +919,15 @@ const demoResidentNames = [
   "Alex Rowan",
   "Drew Bennett",
 ];
-
-// Safe to call on an already seeded demo database; never resets existing rows.
+// Repeat-safe demo upgrade; replaces only seed-owned requests once.
 export const seedUpdatedDevelopment = db.reducer((ctx) => {
   admin(ctx);
   if (ctx.env.ENABLE_DEV_SEED !== "true") fail("Development seed disabled");
   if (!ctx.db.settings.id.find(1)?.seeded) fail("Run seed_development first");
+  refreshDemoRequests(ctx);
   seedUpdatedTables(ctx);
+  recomputeQueuePositions(ctx);
 });
-
 function seedUpdatedTables(ctx: Ctx) {
   const event = [...ctx.db.disaster.iter()].find(
     (d) =>
@@ -965,11 +1034,86 @@ function seedUpdatedTables(ctx: Ctx) {
       ctx.db.resource.id.update({ ...resource, name: resource.name.slice(10) });
   }
 }
-
-// Review metadata preserves the original urgent flag as resident-reported urgency.
+// Only the seed-owned sessions identify replaceable demo requests. User/account
+// flags alone are insufficient: prepopulated login accounts are also fictional.
+function refreshDemoRequests(ctx: Ctx) {
+  const sessions = [...ctx.db.intakeSession.iter()]
+    .filter(
+      (s) =>
+        s.id === `demo:intake:${s.userId}` &&
+        s.owner.equals(ctx.databaseIdentity),
+    )
+    .sort((a, b) => (a.userId < b.userId ? -1 : 1));
+  if (sessions.length !== demoRequests.length)
+    fail(
+      "Demo refresh requires all 10 original seed-owned intake sessions; review legacy seed records before retrying",
+    );
+  for (const [i, session] of sessions.entries()) {
+    const marker = `${session.id}:urgency-v2`;
+    if (ctx.db.intakeMessage.id.find(marker)) continue;
+    const old =
+      session.requestId === undefined
+        ? undefined
+        : ctx.db.assistanceRequest.id.find(session.requestId);
+    if (
+      !old ||
+      old.userId !== session.userId ||
+      !ctx.db.user.id.find(old.userId)?.fictional ||
+      !ctx.db.disaster.id.find(old.disasterId)?.simulated
+    )
+      fail("Demo request provenance is incomplete; no requests were replaced");
+    const fixture = demoRequests[i % demoRequests.length];
+    validateUrgencyScore(fixture.urgencyScore);
+    release(ctx, old.id);
+    for (const assignment of [
+      ...ctx.db.resourceAssignment.requestId.filter(old.id),
+    ])
+      ctx.db.resourceAssignment.id.delete(assignment.id);
+    for (const timer of [...ctx.db.followUpTimer.iter()])
+      if (timer.requestId === old.id) ctx.db.followUpTimer.id.delete(timer.id);
+    ctx.db.requestReview.requestId.delete(old.id);
+    const replacement = ctx.db.assistanceRequest.insert({
+      ...old,
+      ...fixture,
+      queuePosition: 0,
+      urgent: fixture.urgencyScore >= 4,
+      id: 0n,
+      status: "open",
+      createdAt: ctx.timestamp,
+      updatedAt: ctx.timestamp,
+    });
+    // Preserve conversations and their delivery links by retargeting request IDs.
+    for (const linked of [...ctx.db.intakeSession.iter()])
+      if (linked.requestId === old.id)
+        ctx.db.intakeSession.id.update({
+          ...linked,
+          requestId: replacement.id,
+        });
+    for (const msg of [...ctx.db.message.conversationId.filter(old.id)])
+      ctx.db.message.id.update({ ...msg, conversationId: replacement.id });
+    ctx.db.assistanceRequest.id.delete(old.id);
+    ensureReview(ctx, replacement);
+    ctx.db.intakeMessage.insert({
+      id: marker,
+      sessionId: session.id,
+      senderKind: "resident",
+      senderUserId: session.userId,
+      recipientKind: "ai",
+      channel: "sms",
+      content: fixture.needs,
+      createdAt: ctx.timestamp,
+    });
+  }
+}
+// Assessment timestamps distinguish submitted scores from staff/AI assessments.
 function ensureReview(
   ctx: Ctx,
-  request: { id: bigint; createdAt: Timestamp; status: string },
+  request: {
+    id: bigint;
+    createdAt: Timestamp;
+    status: string;
+    urgencyScore: number;
+  },
 ) {
   if (ctx.db.requestReview.requestId.find(request.id)) return;
   const seconds = Number(ctx.env.FOLLOW_UP_SECONDS ?? "1800");
@@ -980,7 +1124,8 @@ function ensureReview(
   );
   ctx.db.requestReview.insert({
     requestId: request.id,
-    assessedUrgent: undefined,
+    urgencyScore: request.urgencyScore,
+      assessedUrgent: undefined,
     assessedBy: undefined,
     assessedAt: undefined,
     acknowledgedBy: undefined,
@@ -996,14 +1141,12 @@ function ensureReview(
     });
   }
 }
-
 // Required once after upgrading an existing database; safe to call again.
 export const initializeRequestReviews = db.reducer((ctx) => {
   admin(ctx);
   for (const request of ctx.db.assistanceRequest.iter())
     ensureReview(ctx, request);
 });
-
 export const flagUnacknowledged = db.reducer(
   { onSchedule: followUpTimer },
   { timer: followUpTimer.rowType },
@@ -1027,7 +1170,6 @@ export const flagUnacknowledged = db.reducer(
     }
   },
 );
-
 export const acknowledgeRequest = db.reducer(
   { requestId: t.u64() },
   (ctx, { requestId }) => {
@@ -1046,9 +1188,8 @@ export const acknowledgeRequest = db.reducer(
       });
   },
 );
-
 export const assessRequestUrgency = db.reducer(
-  { requestId: t.u64(), urgent: t.bool() },
+  { requestId: t.u64(), urgencyScore: t.u8() },
   (ctx, args) => {
     if (ctx.db.access.identity.find(ctx.sender)?.role === "ai") {
       if (
@@ -1061,17 +1202,25 @@ export const assessRequestUrgency = db.reducer(
     const request = ctx.db.assistanceRequest.id.find(args.requestId);
     if (!request || !["open", "in_progress"].includes(request.status))
       fail("Active request required");
+    validateUrgencyScore(args.urgencyScore);
     ensureReview(ctx, request);
+    ctx.db.assistanceRequest.id.update({
+      ...request,
+      urgencyScore: args.urgencyScore,
+      urgent: args.urgencyScore >= 4,
+      updatedAt: ctx.timestamp,
+    });
     const review = ctx.db.requestReview.requestId.find(request.id)!;
     ctx.db.requestReview.requestId.update({
       ...review,
-      assessedUrgent: args.urgent,
+      urgencyScore: args.urgencyScore,
+      assessedUrgent: args.urgencyScore >= 4,
       assessedBy: ctx.sender,
       assessedAt: ctx.timestamp,
     });
+    recomputeQueuePositions(ctx);
   },
 );
-
 type ReadCtx = Pick<
   import("spacetimedb/server").ViewCtx<InferSchema<typeof db>>,
   "sender" | "db"
@@ -1111,7 +1260,6 @@ function writableSession(ctx: Ctx, sessionId: string) {
   if (!session) fail("Intake session not accessible");
   return session;
 }
-
 function saveLocation(
   ctx: Ctx,
   userId: bigint,
@@ -1428,7 +1576,6 @@ export const visibleBroadcastDeliveries = db.view(
       ...ctx.db.broadcastDelivery.broadcastId.filter(b.id),
     ]),
 );
-
 export const startIntake = db.reducer(
   {
     externalId: t.string(),
@@ -1478,7 +1625,6 @@ export const startIntake = db.reducer(
     });
   },
 );
-
 export const saveIntakeMessage = db.reducer(
   {
     sessionId: t.string(),
@@ -1544,7 +1690,6 @@ export const saveIntakeMessage = db.reducer(
     });
   },
 );
-
 export const completeIntake = db.reducer(
   {
     sessionId: t.string(),
@@ -1552,9 +1697,10 @@ export const completeIntake = db.reducer(
     needs: t.string(),
     latitude: t.f64(),
     longitude: t.f64(),
-    reportedUrgent: t.bool(),
+    urgencyScore: t.u8(),
   },
   (ctx, args) => {
+    validateUrgencyScore(args.urgencyScore);
     const session = writableSession(ctx, args.sessionId);
     if (session.requestId !== undefined) return; // Retry cannot create a second request.
     coordinates(args.latitude, args.longitude);
@@ -1567,16 +1713,18 @@ export const completeIntake = db.reducer(
       needs: text(args.needs, 2000),
       latitude: args.latitude,
       longitude: args.longitude,
-      urgent: args.reportedUrgent,
+      urgencyScore: args.urgencyScore,
+      urgent: args.urgencyScore >= 4,
+      queuePosition: 0,
       status: "open",
       createdAt: ctx.timestamp,
       updatedAt: ctx.timestamp,
     });
     ensureReview(ctx, request);
     ctx.db.intakeSession.id.update({ ...session, requestId: request.id });
+    recomputeQueuePositions(ctx);
   },
 );
-
 export const visibleIntakeSessions = db.view(
   { public: true },
   t.array(intakeSession.rowType),
@@ -1610,7 +1758,6 @@ export const visibleRequestReviews = db.view(
     });
   },
 );
-
 const matchResult = t.object("ResourceMatchResult", {
   resource: resource.rowType,
   distanceKm: t.f64(),
@@ -1673,3 +1820,21 @@ export const findMatchingResources = db.view(
       .slice(0, 20);
   },
 );
+export const seedDemoPhoneNumbers = db.reducer((ctx) => {
+  admin(ctx);
+
+  const users = [...ctx.db.user.iter()]
+    .filter((u) => u.fictional && !u.phone)
+    .sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+    );
+
+  for (const user of users) {
+    const phone = `+1202555${String(1000 + Number(user.id) % 9000).padStart(4, "0")}`;
+
+    ctx.db.user.id.update({
+      ...user,
+      phone,
+    });
+  }
+});

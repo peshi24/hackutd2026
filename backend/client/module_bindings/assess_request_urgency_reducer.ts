@@ -12,5 +12,5 @@ import {
 
 export default {
   requestId: __t.u64(),
-  urgent: __t.bool(),
+  urgencyScore: __t.u8(),
 };
