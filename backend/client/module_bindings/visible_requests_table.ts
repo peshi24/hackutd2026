@@ -17,7 +17,7 @@ export default __t.row({
   needs: __t.string(),
   latitude: __t.f64(),
   longitude: __t.f64(),
-  urgent: __t.bool(),
+  urgencyScore: __t.u8().name("urgency_score"),
   status: __t.string(),
   createdAt: __t.timestamp().name("created_at"),
   updatedAt: __t.timestamp().name("updated_at"),

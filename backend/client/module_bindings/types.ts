@@ -33,7 +33,7 @@ export const AssistanceRequest = __t.object("AssistanceRequest", {
   needs: __t.string(),
   latitude: __t.f64(),
   longitude: __t.f64(),
-  urgent: __t.bool(),
+  urgencyScore: __t.u8(),
   status: __t.string(),
   createdAt: __t.timestamp(),
   updatedAt: __t.timestamp(),
@@ -153,7 +153,7 @@ export type OutreachPreference = __Infer<typeof OutreachPreference>;
 
 export const RequestReview = __t.object("RequestReview", {
   requestId: __t.u64(),
-  assessedUrgent: __t.option(__t.bool()),
+  urgencyScore: __t.u8(),
   assessedBy: __t.option(__t.identity()),
   assessedAt: __t.option(__t.timestamp()),
   acknowledgedBy: __t.option(__t.identity()),

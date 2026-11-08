@@ -214,7 +214,7 @@ try {
     needs: "Test water request",
     latitude: 32.95,
     longitude: -96.73,
-    urgent: true,
+    urgencyScore: 5,
   });
   await until(() => resident.conn.db.visibleRequests.count() === 1n);
   const ownRequest = [...resident.conn.db.visibleRequests.iter()][0];
@@ -257,7 +257,7 @@ try {
     needs: "SMS water request",
     latitude: 32.95,
     longitude: -96.73,
-    urgent: false,
+    urgencyScore: 2,
   });
   await until(() => a.conn.db.visibleRequests.count() === 12n);
   const smsRequest = [...a.conn.db.visibleRequests.iter()].find(
