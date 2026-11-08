@@ -1,3 +1,5 @@
+
+/*import { exportString } from 'node:ffi';
 import { schema, table, t } from 'spacetimedb/server';
 
 // 1. Define tables using SpacetimeDB's schema builder
@@ -73,3 +75,6 @@ export const addKeyNote = dbSchema.reducer(
     });
   }
 );
+*/
+
+export default {};

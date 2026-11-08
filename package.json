@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "bun": "^1.4.4",
+    "hono": "^4.13.17",
+    "spacetimedb": "^2.14.0",
+    "spectrum-ts": "^12.15.0",
+    "typescript": "^7.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
+  }
+}
