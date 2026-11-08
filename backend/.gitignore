@@ -2,3 +2,4 @@
 spacetimedb/dist/
 spacetime.local.json
 .test-client/
+accounts.local.json

@@ -13,6 +13,7 @@ const user = table(
     name: "user",
     indexes: [
       { accessor: "identity", algorithm: "btree", columns: ["identity"] },
+      { accessor: "email", algorithm: "btree", columns: ["email"] },
     ],
   },
   {
@@ -22,6 +23,7 @@ const user = table(
     phone: t.option(t.string()),
     role: t.string(),
     fictional: t.bool(),
+    email: t.string().default(""),
   },
 );
 const access = table(
@@ -235,6 +237,7 @@ const db = schema(
     env: {
       ENABLE_DEV_SEED: t.string().optional(),
       FOLLOW_UP_SECONDS: t.string().optional(),
+      SPACETIMEAUTH_CLIENT_ID: t.string().optional(),
     },
   },
 );
@@ -251,6 +254,7 @@ function responder(ctx: Ctx) {
   if (ctx.db.settings.id.find(1)?.admin.equals(ctx.sender)) return;
   if (ctx.db.access.identity.find(ctx.sender)?.role !== "responder")
     fail("Responder required");
+  currentUser(ctx);
 }
 function integration(ctx: Ctx) {
   if (
@@ -276,10 +280,135 @@ function coordinates(latitude: number, longitude: number) {
     fail("Invalid coordinates");
 }
 function currentUser(ctx: Ctx) {
-  const row = [...ctx.db.user.identity.filter(ctx.sender)][0];
-  if (!row) fail("Register a profile first");
+  const email = verifiedEmail(ctx);
+  const row = accountFor(ctx);
+  if (!row || row.email !== email) fail("No account found for this email.");
   return row;
 }
+
+function normalizeEmail(email: string) {
+  const result = email.trim().toLowerCase();
+  if (result.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result))
+    fail("Invalid email address");
+  return result;
+}
+function verifiedEmail(ctx: Ctx) {
+  const clientId = ctx.env.SPACETIMEAUTH_CLIENT_ID;
+  if (!clientId) fail("SpacetimeAuth client ID is not configured");
+  const jwt = ctx.senderAuth.jwt;
+  if (
+    !jwt ||
+    jwt.issuer !== "https://auth.spacetimedb.com/oidc" ||
+    !jwt.audience.includes(clientId)
+  )
+    fail("Sign in with NeighborAlert's SpacetimeAuth client");
+  if (
+    jwt.fullPayload.email_verified !== true ||
+    typeof jwt.fullPayload.email !== "string"
+  )
+    fail("A verified email address is required");
+  return normalizeEmail(jwt.fullPayload.email);
+}
+function accountFor(ctx: ReadCtx) {
+  const rows = [...ctx.db.user.identity.filter(ctx.sender)].filter(
+    (u) => u.email !== "",
+  );
+  return rows.length === 1 ? rows[0] : undefined;
+}
+// Views are scoped by identity. Revalidate linked human identities on each new
+// connection so a token for another audience cannot reuse a previous binding.
+export const validateAccountConnection = db.clientConnected((ctx) => {
+  if (ctx.db.settings.id.find(1)?.admin.equals(ctx.sender)) return;
+  if (
+    ["ai", "integration"].includes(
+      ctx.db.access.identity.find(ctx.sender)?.role ?? "",
+    )
+  )
+    return;
+  const email = verifiedEmail(ctx);
+  const account = accountFor(ctx);
+  if (account && email !== account.email)
+    fail("No account found for this email.");
+});
+export const loginExistingUser = db.reducer((ctx) => {
+  const email = verifiedEmail(ctx);
+  const matches = [...ctx.db.user.email.filter(email)];
+  if (matches.length !== 1) fail("No account found for this email.");
+  const account = matches[0];
+  if (!["resident", "responder"].includes(account.role))
+    fail("Account role is not supported");
+  if (account.identity && !account.identity.equals(ctx.sender))
+    fail("Account is already linked to another identity");
+  if (
+    [...ctx.db.user.identity.filter(ctx.sender)].some(
+      (u) => u.id !== account.id,
+    )
+  )
+    fail("Identity is already linked to another account");
+  if (
+    ["ai", "integration"].includes(
+      ctx.db.access.identity.find(ctx.sender)?.role ?? "",
+    )
+  )
+    fail("Service identities cannot sign in as residents");
+  ctx.db.user.id.update({ ...account, identity: ctx.sender });
+  ctx.db.access.identity.delete(ctx.sender);
+  if (account.role === "responder")
+    ctx.db.access.insert({ identity: ctx.sender, role: "responder" });
+});
+// Administrative data preparation, never part of the login flow. Supplying a
+// userId attaches an email to an existing demo resident and preserves its ID.
+export const prepopulateDemoAccount = db.reducer(
+  {
+    userId: t.option(t.u64()),
+    email: t.string(),
+    name: t.string(),
+    role: t.string(),
+    phone: t.option(t.string()),
+  },
+  (ctx, args) => {
+    admin(ctx);
+    if (ctx.env.ENABLE_DEV_SEED !== "true") fail("Development seed disabled");
+    const email = normalizeEmail(args.email);
+    if (!["resident", "responder"].includes(args.role))
+      fail("Invalid account role");
+    const matches = [...ctx.db.user.email.filter(email)];
+    const existing =
+      args.userId === undefined ? matches[0] : ctx.db.user.id.find(args.userId);
+    if (args.userId !== undefined && !existing) fail("User not found");
+    if (matches.some((u) => u.id !== existing?.id))
+      fail("Email already belongs to another account");
+    const values = {
+      email,
+      name: text(args.name, 100),
+      role: args.role,
+      phone: args.phone === undefined ? undefined : text(args.phone, 32),
+    };
+    if (existing) {
+      // Never silently move a bound account to a different email/identity.
+      if (existing.identity && existing.email !== email)
+        fail("Cannot change email on a linked account");
+      ctx.db.user.id.update({ ...existing, ...values });
+      if (existing.identity) {
+        const role = ctx.db.access.identity.find(existing.identity)?.role;
+        if (["ai", "integration"].includes(role ?? ""))
+          fail("Cannot change a service account");
+        ctx.db.access.identity.delete(existing.identity);
+        if (args.role === "responder")
+          ctx.db.access.insert({
+            identity: existing.identity,
+            role: "responder",
+          });
+      }
+    } else
+      ctx.db.user.insert({
+        id: 0n,
+        identity: undefined,
+        fictional: true,
+        ...values,
+      });
+  },
+);
 function release(ctx: Ctx, requestId: bigint, fulfilled = false) {
   for (const a of ctx.db.resourceAssignment.requestId.filter(requestId)) {
     if (!a.active) continue;
@@ -318,19 +447,8 @@ export const setAccess = db.reducer(
 export const registerUser = db.reducer(
   { name: t.string(), phone: t.option(t.string()) },
   (ctx, args) => {
-    if ([...ctx.db.user.identity.filter(ctx.sender)].length)
-      fail("Profile already exists");
-    ctx.db.user.insert({
-      id: 0n,
-      identity: ctx.sender,
-      name: text(args.name, 100),
-      phone: args.phone === undefined ? undefined : text(args.phone, 32),
-      role:
-        ctx.db.access.identity.find(ctx.sender)?.role === "responder"
-          ? "responder"
-          : "resident",
-      fictional: false,
-    });
+    // Retain the wire API for old clients, but never allow self-registration.
+    fail("Self-registration is disabled. Sign in to an existing account.");
   },
 );
 export const registerIntegrationResident = db.reducer(
@@ -342,6 +460,7 @@ export const registerIntegrationResident = db.reducer(
       identity: undefined,
       name: text(args.name, 100),
       phone: text(args.phone, 32),
+      email: "",
       role: "resident",
       fictional: false,
     });
@@ -581,52 +700,48 @@ export const saveMessage = db.reducer(
   },
 );
 
+// Preserve the existing public view shape; email is private account lookup data.
+const accountProfile = t.row("AccountProfile", {
+  id: t.u64().primaryKey(),
+  identity: t.option(t.identity()),
+  name: t.string(),
+  phone: t.option(t.string()),
+  role: t.string(),
+  fictional: t.bool(),
+});
 export const myProfile = db.view(
   { public: true },
-  t.array(user.rowType),
-  (ctx) => [...ctx.db.user.identity.filter(ctx.sender)],
+  t.array(accountProfile),
+  (ctx) => {
+    const account = accountFor(ctx);
+    return account ? [account] : [];
+  },
 );
 export const visibleUsers = db.view(
   { public: true },
-  t.array(user.rowType),
-  (ctx) =>
-    ctx.db.settings.id.find(1)?.admin.equals(ctx.sender) ||
-    ctx.db.access.identity.find(ctx.sender)?.role === "responder"
-      ? [...ctx.db.user.iter()]
-      : [],
+  t.array(accountProfile),
+  (ctx) => (staff(ctx) ? [...ctx.db.user.iter()] : []),
 );
 export const visibleRequests = db.view(
   { public: true },
   t.array(assistanceRequest.rowType),
   (ctx) => {
-    if (
-      ctx.db.settings.id.find(1)?.admin.equals(ctx.sender) ||
-      ctx.db.access.identity.find(ctx.sender)?.role === "responder"
-    )
-      return [...ctx.db.assistanceRequest.iter()];
-    const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+    if (staff(ctx)) return [...ctx.db.assistanceRequest.iter()];
+    const u = accountFor(ctx);
     return u ? [...ctx.db.assistanceRequest.userId.filter(u.id)] : [];
   },
 );
 export const visibleResources = db.view(
   { public: true },
   t.array(resource.rowType),
-  (ctx) =>
-    ctx.db.settings.id.find(1)?.admin.equals(ctx.sender) ||
-    ctx.db.access.identity.find(ctx.sender)?.role === "responder"
-      ? [...ctx.db.resource.iter()]
-      : [],
+  (ctx) => (staff(ctx) ? [...ctx.db.resource.iter()] : []),
 );
 export const visibleAssignments = db.view(
   { public: true },
   t.array(resourceAssignment.rowType),
   (ctx) => {
-    if (
-      ctx.db.settings.id.find(1)?.admin.equals(ctx.sender) ||
-      ctx.db.access.identity.find(ctx.sender)?.role === "responder"
-    )
-      return [...ctx.db.resourceAssignment.iter()];
-    const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+    if (staff(ctx)) return [...ctx.db.resourceAssignment.iter()];
+    const u = accountFor(ctx);
     return u
       ? [...ctx.db.assistanceRequest.userId.filter(u.id)].flatMap((r) => [
           ...ctx.db.resourceAssignment.requestId.filter(r.id),
@@ -638,7 +753,7 @@ export const myMessages = db.view(
   { public: true },
   t.array(message.rowType),
   (ctx) => {
-    const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+    const u = accountFor(ctx);
     return u
       ? [...ctx.db.message.iter()].filter(
           (m) => m.senderId === u.id || m.recipientId === u.id,
@@ -673,6 +788,7 @@ export const seedDevelopment = db.reducer((ctx) => {
       id: 0n,
       identity: undefined,
       name: demoResidentNames[i],
+      email: "",
       phone: undefined,
       role: "resident",
       fictional: true,
@@ -963,7 +1079,8 @@ type ReadCtx = Pick<
 function staff(ctx: ReadCtx) {
   return (
     ctx.db.settings.id.find(1)?.admin.equals(ctx.sender) ||
-    ctx.db.access.identity.find(ctx.sender)?.role === "responder"
+    (ctx.db.access.identity.find(ctx.sender)?.role === "responder" &&
+      !!accountFor(ctx))
   );
 }
 function sessionsFor(ctx: ReadCtx) {
@@ -972,7 +1089,7 @@ function sessionsFor(ctx: ReadCtx) {
   const ownSessions = ["integration", "ai"].includes(role ?? "")
     ? [...ctx.db.intakeSession.owner.filter(ctx.sender)]
     : [];
-  const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+  const u = accountFor(ctx);
   const residentSessions = u
     ? [...ctx.db.intakeSession.userId.filter(u.id)]
     : [];
@@ -983,6 +1100,13 @@ function sessionsFor(ctx: ReadCtx) {
   ];
 }
 function writableSession(ctx: Ctx, sessionId: string) {
+  if (
+    !ctx.db.settings.id.find(1)?.admin.equals(ctx.sender) &&
+    !["ai", "integration"].includes(
+      ctx.db.access.identity.find(ctx.sender)?.role ?? "",
+    )
+  )
+    currentUser(ctx);
   const session = sessionsFor(ctx).find((s) => s.id === sessionId);
   if (!session) fail("Intake session not accessible");
   return session;
@@ -1052,7 +1176,7 @@ export const visibleUserLocations = db.view(
   t.array(userLocation.rowType),
   (ctx) => {
     if (staff(ctx)) return [...ctx.db.userLocation.iter()];
-    const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+    const u = accountFor(ctx);
     const row = u && ctx.db.userLocation.userId.find(u.id);
     return row ? [row] : [];
   },
@@ -1061,7 +1185,7 @@ export const myOutreachPreference = db.view(
   { public: true },
   t.array(outreachPreference.rowType),
   (ctx) => {
-    const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+    const u = accountFor(ctx);
     const row = u && ctx.db.outreachPreference.userId.find(u.id);
     return row ? [row] : [];
   },
@@ -1334,6 +1458,7 @@ export const startIntake = db.reducer(
           id: 0n,
           identity: undefined,
           name: text(args.name, 100),
+          email: "",
           phone: args.phone === undefined ? undefined : text(args.phone, 32),
           role: "resident",
           fictional: false,
@@ -1470,7 +1595,7 @@ export const visibleRequestReviews = db.view(
   t.array(requestReview.rowType),
   (ctx) => {
     if (staff(ctx)) return [...ctx.db.requestReview.iter()];
-    const u = [...ctx.db.user.identity.filter(ctx.sender)][0];
+    const u = accountFor(ctx);
     const ids = new Set(
       sessionsFor(ctx).flatMap((s) =>
         s.requestId === undefined ? [] : [s.requestId],

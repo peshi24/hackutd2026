@@ -16,6 +16,16 @@ export const Access = __t.object("Access", {
 });
 export type Access = __Infer<typeof Access>;
 
+export const AccountProfile = __t.object("AccountProfile", {
+  id: __t.u64(),
+  identity: __t.option(__t.identity()),
+  name: __t.string(),
+  phone: __t.option(__t.string()),
+  role: __t.string(),
+  fictional: __t.bool(),
+});
+export type AccountProfile = __Infer<typeof AccountProfile>;
+
 export const AssistanceRequest = __t.object("AssistanceRequest", {
   id: __t.u64(),
   userId: __t.u64(),
@@ -201,6 +211,7 @@ export const User = __t.object("User", {
   phone: __t.option(__t.string()),
   role: __t.string(),
   fictional: __t.bool(),
+  email: __t.string(),
 });
 export type User = __Infer<typeof User>;
 
