@@ -150,6 +150,7 @@ try {
     ]);
     await run(process.execPath, ["tests/integration.mjs"]);
     await run(process.execPath, ["tests/intake.mjs"]);
+    await run(process.execPath, ["tests/outreach.mjs"]);
   } else {
     const seed = spawnSync(
       cli,
@@ -176,6 +177,14 @@ try {
       "call",
       database,
       "initialize_request_reviews",
+      "--server",
+      server,
+      "--no-config",
+    ]);
+    await run(cli, [
+      "call",
+      database,
+      "seed_updated_development",
       "--server",
       server,
       "--no-config",

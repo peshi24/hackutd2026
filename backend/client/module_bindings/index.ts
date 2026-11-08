@@ -37,20 +37,30 @@ import {
 import AcknowledgeRequestReducer from "./acknowledge_request_reducer";
 import AssessRequestUrgencyReducer from "./assess_request_urgency_reducer";
 import AssignResourceReducer from "./assign_resource_reducer";
+import ClaimBroadcastDeliveryReducer from "./claim_broadcast_delivery_reducer";
+import ClearMyLocationReducer from "./clear_my_location_reducer";
 import CompleteIntakeReducer from "./complete_intake_reducer";
 import CreateAssistanceRequestReducer from "./create_assistance_request_reducer";
 import CreateDisasterReducer from "./create_disaster_reducer";
 import CreateOrganizationReducer from "./create_organization_reducer";
 import CreateResourceReducer from "./create_resource_reducer";
+import FinishBroadcastDeliveryReducer from "./finish_broadcast_delivery_reducer";
 import InitializeRequestReviewsReducer from "./initialize_request_reviews_reducer";
+import QueueBroadcastReducer from "./queue_broadcast_reducer";
 import RegisterIntegrationResidentReducer from "./register_integration_resident_reducer";
 import RegisterUserReducer from "./register_user_reducer";
 import ReleaseAssignmentReducer from "./release_assignment_reducer";
+import RetryBroadcastDeliveryReducer from "./retry_broadcast_delivery_reducer";
 import SaveIntakeMessageReducer from "./save_intake_message_reducer";
 import SaveMessageReducer from "./save_message_reducer";
 import SeedDevelopmentReducer from "./seed_development_reducer";
+import SeedUpdatedDevelopmentReducer from "./seed_updated_development_reducer";
 import SetAccessReducer from "./set_access_reducer";
+import SetIntakeSmsOptInReducer from "./set_intake_sms_opt_in_reducer";
+import SetMySmsOptInReducer from "./set_my_sms_opt_in_reducer";
 import StartIntakeReducer from "./start_intake_reducer";
+import UpdateIntakeLocationReducer from "./update_intake_location_reducer";
+import UpdateMyLocationReducer from "./update_my_location_reducer";
 import UpdateRequestStatusReducer from "./update_request_status_reducer";
 import UpdateResourceAvailabilityReducer from "./update_resource_availability_reducer";
 
@@ -60,14 +70,18 @@ import UpdateResourceAvailabilityReducer from "./update_resource_availability_re
 import DisasterRow from "./disaster_table";
 import FindMatchingResourcesRow from "./find_matching_resources_table";
 import MyMessagesRow from "./my_messages_table";
+import MyOutreachPreferenceRow from "./my_outreach_preference_table";
 import MyProfileRow from "./my_profile_table";
 import OrganizationRow from "./organization_table";
 import VisibleAssignmentsRow from "./visible_assignments_table";
+import VisibleBroadcastDeliveriesRow from "./visible_broadcast_deliveries_table";
+import VisibleBroadcastsRow from "./visible_broadcasts_table";
 import VisibleIntakeMessagesRow from "./visible_intake_messages_table";
 import VisibleIntakeSessionsRow from "./visible_intake_sessions_table";
 import VisibleRequestReviewsRow from "./visible_request_reviews_table";
 import VisibleRequestsRow from "./visible_requests_table";
 import VisibleResourcesRow from "./visible_resources_table";
+import VisibleUserLocationsRow from "./visible_user_locations_table";
 import VisibleUsersRow from "./visible_users_table";
 
 /** Type-only namespace exports for generated type groups. */
@@ -110,6 +124,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, MyMessagesRow),
+  myOutreachPreference: __table({
+    name: 'my_outreach_preference',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, MyOutreachPreferenceRow),
   myProfile: __table({
     name: 'my_profile',
     indexes: [
@@ -124,6 +145,20 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleAssignmentsRow),
+  visibleBroadcastDeliveries: __table({
+    name: 'visible_broadcast_deliveries',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleBroadcastDeliveriesRow),
+  visibleBroadcasts: __table({
+    name: 'visible_broadcasts',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleBroadcastsRow),
   visibleIntakeMessages: __table({
     name: 'visible_intake_messages',
     indexes: [
@@ -159,6 +194,13 @@ const tablesSchema = __schema({
     constraints: [
     ],
   }, VisibleResourcesRow),
+  visibleUserLocations: __table({
+    name: 'visible_user_locations',
+    indexes: [
+    ],
+    constraints: [
+    ],
+  }, VisibleUserLocationsRow),
   visibleUsers: __table({
     name: 'visible_users',
     indexes: [
@@ -173,20 +215,30 @@ const reducersSchema = __reducers(
   __reducerSchema("acknowledge_request", AcknowledgeRequestReducer),
   __reducerSchema("assess_request_urgency", AssessRequestUrgencyReducer),
   __reducerSchema("assign_resource", AssignResourceReducer),
+  __reducerSchema("claim_broadcast_delivery", ClaimBroadcastDeliveryReducer),
+  __reducerSchema("clear_my_location", ClearMyLocationReducer),
   __reducerSchema("complete_intake", CompleteIntakeReducer),
   __reducerSchema("create_assistance_request", CreateAssistanceRequestReducer),
   __reducerSchema("create_disaster", CreateDisasterReducer),
   __reducerSchema("create_organization", CreateOrganizationReducer),
   __reducerSchema("create_resource", CreateResourceReducer),
+  __reducerSchema("finish_broadcast_delivery", FinishBroadcastDeliveryReducer),
   __reducerSchema("initialize_request_reviews", InitializeRequestReviewsReducer),
+  __reducerSchema("queue_broadcast", QueueBroadcastReducer),
   __reducerSchema("register_integration_resident", RegisterIntegrationResidentReducer),
   __reducerSchema("register_user", RegisterUserReducer),
   __reducerSchema("release_assignment", ReleaseAssignmentReducer),
+  __reducerSchema("retry_broadcast_delivery", RetryBroadcastDeliveryReducer),
   __reducerSchema("save_intake_message", SaveIntakeMessageReducer),
   __reducerSchema("save_message", SaveMessageReducer),
   __reducerSchema("seed_development", SeedDevelopmentReducer),
+  __reducerSchema("seed_updated_development", SeedUpdatedDevelopmentReducer),
   __reducerSchema("set_access", SetAccessReducer),
+  __reducerSchema("set_intake_sms_opt_in", SetIntakeSmsOptInReducer),
+  __reducerSchema("set_my_sms_opt_in", SetMySmsOptInReducer),
   __reducerSchema("start_intake", StartIntakeReducer),
+  __reducerSchema("update_intake_location", UpdateIntakeLocationReducer),
+  __reducerSchema("update_my_location", UpdateMyLocationReducer),
   __reducerSchema("update_request_status", UpdateRequestStatusReducer),
   __reducerSchema("update_resource_availability", UpdateResourceAvailabilityReducer),
 );

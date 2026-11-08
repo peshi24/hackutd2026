@@ -2,6 +2,85 @@
 
 SpacetimeDB CLI **2.14.1**, server/client SDK **2.14.0** (pinned and locked). Implementation, generated client bindings and tests are entirely in `backend/`; the Expo frontend is unchanged.
 
+## Updated demo data
+
+Fresh `seed_development` calls now also populate 10 locations, 10 SMS preferences, 10 intake sessions linked to the demo requests, 20 intake messages, 10 request reviews, one broadcast, and 10 completed delivery records. Follow-up timers are created for active requests and disappear after execution. Names and descriptions no longer contain "simulated"; internal `fictional`/`simulated` flags still identify demo records. No SMS is sent. The delivery history uses placeholder provider IDs and example phone numbers, and belongs to the database identity, not a real sending service.
+
+For an **already seeded** database, publish this module and call `seed_updated_development`. It adds the new fixtures without resetting data, preserves existing location/preferences/review records, and cleans the old seed's label prefixes. Repeating it does not duplicate fixtures or refresh their timestamps. Ordinary non-demo records are untouched.
+
+PowerShell, from `backend` (use your original publishing/admin identity):
+
+```powershell
+$env:ENABLE_DEV_SEED = 'true'
+spacetime publish YOUR-DATABASE-NAME --server maincloud --module-path spacetimedb --no-config --delete-data=never
+spacetime call YOUR-DATABASE-NAME seed_updated_development --server maincloud --no-config
+Remove-Item Env:ENABLE_DEV_SEED
+spacetime publish YOUR-DATABASE-NAME --server maincloud --no-config --env-only --unset-env ENABLE_DEV_SEED
+```
+
+Check that the publish succeeded before calling the seed. On a brand-new database, call `seed_development` instead. `npm run dev` automatically fills the additional demo tables in its local database. Fictional residents remain excluded from live broadcast targeting; these fixtures demonstrate dashboard history, not external delivery.
+
+## Resident locations and disaster outreach
+
+Four additional **private** tables store `user_location`, `outreach_preference`, `broadcast`, and `broadcast_delivery`. Existing tables/records are unchanged. No existing user is automatically assigned a location or opted into SMS. The backend stores locations; the mobile UI must obtain permission or a manually entered location before calling it. No mobile location dependency is added.
+
+After connecting and subscribing using `client/connect.ts`:
+
+```typescript
+await connection.reducers.updateMyLocation({
+  latitude: 32.9483, longitude: -96.7299, source: "app", // or "manual"
+});
+await connection.reducers.setMySmsOptIn({ smsOptIn: true });
+// Opt out / remove last-known location:
+// await connection.reducers.setMySmsOptIn({ smsOptIn: false });
+// await connection.reducers.clearMyLocation();
+```
+
+Residents can change only their own record. `visibleUserLocations` exposes their own location to residents, and all locations to responders/admin. Services do not get a global location list. `myOutreachPreference` returns only the caller's preference. For SMS-only residents, the owning integration can call `updateIntakeLocation({sessionId, latitude, longitude})` and `setIntakeSmsOptIn({sessionId, smsOptIn})` to record information explicitly supplied by that resident. The service must process opt-out messages and must not infer consent from receiving an arbitrary message.
+
+A responder/admin queues outreach using the disaster's center and a circular radius:
+
+```typescript
+await connection.reducers.queueBroadcast({
+  externalId: "richardson-outreach-001", // retain this key for retries
+  disasterId: 1n,
+  radiusKm: 5,
+  maxLocationAgeHours: 24,
+  content: "Disaster response team: do you need assistance?",
+  serviceIdentity, // SDK Identity of a service already granted the ai role
+});
+```
+
+This transaction selects residents with a location inside the radius, an explicit SMS opt-in, an international-format phone number (`+` and 8-15 digits), and a location no older than the supplied age. Fictional users are excluded. Radius is 1-500 km; maximum age is 1-168 hours. Distance uses the haversine formula. Age is measured from when the server received the location; clients should submit fresh observations. This is a last-known location, not guaranteed live GPS or an official hazard boundary.
+
+The recipient list is a snapshot at queue time. There is one delivery per broadcast/user; repeating the same external key under the same responder identity does not enqueue again, and conflicting arguments are rejected. A new key intentionally creates a new broadcast. Multiple user records sharing one phone number are not deduplicated across users. Scanning locations is intended for MVP scale.
+
+Responders/admin see `visibleBroadcasts` and `visibleBroadcastDeliveries`; the designated currently authorized AI service sees only its assigned broadcasts/deliveries. Delivery rows contain phone numbers and are not visible to residents or other services. To find the newly queued broadcast, use its ID: `JSON.stringify([responderIdentity.toHexString(), externalId])`, then filter delivery rows by `broadcastId`.
+
+### Sending service contract
+
+No SMS is sent by these reducers. Your trusted service subscribes to the broadcast views and:
+
+1. Calls `claimBroadcastDelivery({deliveryId})` for a queued row. Only one concurrent claim succeeds. After a successful call, read the updated row: it may be `skipped` if the location is now stale/outside the area, the resident opted out, the phone changed, or the disaster is inactive. Never send a skipped row. A `sending` row includes an intake `sessionId` owned by the service and an incremented `attempt`.
+2. Sends the parent broadcast's content to the row's phone through the provider. Use `delivery.id` as the provider idempotency key (or a stable hash if its API has length restrictions). A resumed worker must reconcile an existing `sending` row with the provider rather than blindly send it again. Opt-out after claiming cannot recall an external send; process provider opt-outs too.
+3. Calls `finishBroadcastDelivery({deliveryId, attempt, providerMessageId, error: undefined})` once the provider accepts the message. This atomically marks it `sent` and stores exactly one outbound intake message. Here `sent` means provider accepted, not confirmed handset delivery. Do not separately call `saveIntakeMessage` for that same outgoing message.
+4. On a **definite rejection**, calls `finishBroadcastDelivery({deliveryId, attempt, providerMessageId: undefined, error: "reason"})`. A responder can call `retryBroadcastDelivery({deliveryId})` on a failed row to queue it again. The next claim rechecks eligibility. Stale attempt numbers are rejected. Timeouts with unknown provider outcomes must remain `sending` until reconciled; there is no automatic lease expiry or unsafe retry of unknown sends.
+5. Records replies through `saveIntakeMessage` using the delivery's session ID, then continues the existing intake workflow. Persist the provider/thread-to-session mapping in the SMS integration; the database cannot infer it from an incoming webhook.
+
+All workers using the same service identity must coordinate ownership of successful claims; a subscription showing `sending` alone is not permission for every worker to send. Database claims prevent concurrent queue acquisition, but exactly-once external SMS requires provider idempotency/reconciliation.
+
+### Publish and test this update
+
+From `backend`, run `npm run typecheck`, `npm run lint`, and `npm test`. Tests use a disposable local database and never send SMS. The outreach suite covers private tables, scoped views, radius filtering, missing locations, invalid phones, opt-in, duplicate broadcasts, concurrent claims, failed-delivery retries, stale attempts, intake logging, opt-out rechecks, and access revocation.
+
+Publish to your existing database without deleting data:
+
+```bash
+spacetime publish YOUR-PUBLISHED-DATABASE --server maincloud --module-path spacetimedb --no-config --delete-data=never
+```
+
+No reseed or location backfill is needed. Keep the existing request-review initialization instructions below if upgrading from a version before request reviews. Distribute the regenerated `client/module_bindings` and updated `client/connect.ts` to frontend/service teammates. This change does not deploy an SMS worker or a location-entry screen.
+
 ## AI intake and request review update
 
 The original nine tables and their columns/IDs are preserved. Four new private tables add the requested workflow:
@@ -107,7 +186,7 @@ Remove-Item Env:ENABLE_DEV_SEED
 
 Without a saved credential, publishing creates a local development identity, not a Maincloud account login. The publishing identity becomes the application administrator in `init`; keep its credential. Never reset a teammate's database. Choose a new name if incompatible schema changes block publishing.
 
-The seed requires administrator authorization and database environment `ENABLE_DEV_SEED=true`. It is disabled by default, atomic, and rejects repeat calls. It creates exactly one simulated Richardson tornado, ten fictional residents without login identities or phone numbers, ten requests, five fictional organizations and twenty resources (four each of hotel, trailer, vehicle, food and water). Coordinates are invented Richardson-area points, not verified pickup addresses. Labels explicitly identify simulations. Capacities use beds, seats, meal parcels and liters; shelter is also a supported resource kind.
+The seed requires administrator authorization and database environment `ENABLE_DEV_SEED=true`. It is disabled by default, atomic, and rejects repeat calls. It creates one Richardson tornado, ten fictional residents without login identities or phone numbers, ten requests, five fictional organizations and twenty resources (four each of hotel, trailer, vehicle, food and water), plus the updated demo tables described above. Coordinates are invented Richardson-area points, not verified pickup addresses. Internal flags identify demo records; display labels use ordinary names. Capacities use beds, seats, meal parcels and liters; shelter is also a supported resource kind.
 
 Removing a shell variable does not remove the database's stored setting. Disable it explicitly when finished:
 

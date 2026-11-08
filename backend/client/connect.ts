@@ -36,6 +36,10 @@ export function connectDashboard(options: {
       tables.visibleIntakeSessions,
       tables.visibleIntakeMessages,
       tables.visibleRequestReviews,
+      tables.visibleUserLocations,
+      tables.myOutreachPreference,
+      tables.visibleBroadcasts,
+      tables.visibleBroadcastDeliveries,
     ]);
 
   return {
