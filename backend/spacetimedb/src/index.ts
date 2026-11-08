@@ -499,19 +499,33 @@ export const createOrganization = db.reducer(
 function recomputeQueuePositions(ctx: Ctx) {
   const active = [...ctx.db.assistanceRequest.iter()]
     .filter((r) => r.status === "open" || r.status === "in_progress")
-    .sort((a, b) =>
-      b.urgencyScore - a.urgencyScore ||
-      (a.createdAt.microsSinceUnixEpoch < b.createdAt.microsSinceUnixEpoch ? -1 :
-       a.createdAt.microsSinceUnixEpoch > b.createdAt.microsSinceUnixEpoch ? 1 :
-       a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+    .sort(
+      (a, b) =>
+        b.urgencyScore - a.urgencyScore ||
+        (a.createdAt.microsSinceUnixEpoch < b.createdAt.microsSinceUnixEpoch
+          ? -1
+          : a.createdAt.microsSinceUnixEpoch > b.createdAt.microsSinceUnixEpoch
+            ? 1
+            : a.id < b.id
+              ? -1
+              : a.id > b.id
+                ? 1
+                : 0),
     );
   for (const [index, request] of active.entries()) {
     const position = index + 1;
     if (request.queuePosition !== position)
-      ctx.db.assistanceRequest.id.update({ ...request, queuePosition: position });
+      ctx.db.assistanceRequest.id.update({
+        ...request,
+        queuePosition: position,
+      });
   }
   for (const request of ctx.db.assistanceRequest.iter()) {
-    if (request.status !== "open" && request.status !== "in_progress" && request.queuePosition !== 0)
+    if (
+      request.status !== "open" &&
+      request.status !== "in_progress" &&
+      request.queuePosition !== 0
+    )
       ctx.db.assistanceRequest.id.update({ ...request, queuePosition: 0 });
   }
 }
@@ -1135,7 +1149,7 @@ function ensureReview(
   ctx.db.requestReview.insert({
     requestId: request.id,
     urgencyScore: request.urgencyScore,
-      assessedUrgent: undefined,
+    assessedUrgent: undefined,
     assessedBy: undefined,
     assessedAt: undefined,
     acknowledgedBy: undefined,
@@ -1835,12 +1849,10 @@ export const seedDemoPhoneNumbers = db.reducer((ctx) => {
 
   const users = [...ctx.db.user.iter()]
     .filter((u) => u.fictional && !u.phone)
-    .sort((a, b) =>
-      a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-    );
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   for (const user of users) {
-    const phone = `+1202555${String(1000 + Number(user.id) % 9000).padStart(4, "0")}`;
+    const phone = `+1202555${String(1000 + (Number(user.id) % 9000)).padStart(4, "0")}`;
 
     ctx.db.user.id.update({
       ...user,

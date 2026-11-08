@@ -68,7 +68,7 @@ export default function Login() {
                     Welcome to
                 </Text>
                 <Text style={styles.bigText}>
-                    NeighborAlert
+                    Lifeline
                 </Text>
             </KeyboardAvoidingView>
         </ImageBackground>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI Dispatch Dashboard</title>
+<style>
+:root{--red:#e31937;--red-dark:#b3122b;--ink:#1d1d1f;--muted:#6e6e73;--line:#e5e5ea;--page:#f2f2f4;--card:#fff;--ok-bg:#e3f4e8;--ok:#1b6b34;--warn-bg:#fff1d6;--warn:#8a5a00;--bad-bg:#fde8eb;--bad:#b3122b}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:#d9d9de;display:flex;align-items:center;justify-content:center;font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink)}
+.phone{width:390px;height:800px;max-height:100vh;background:var(--page);border-radius:44px;border:10px solid #111;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.status{background:var(--red);color:#fff;font-size:13px;font-weight:600;display:flex;justify-content:space-between;padding:10px 26px 4px}
+.notch{position:absolute;top:8px;left:50%;transform:translateX(-50%);width:100px;height:24px;background:#111;border-radius:14px}
+.header{background:var(--red);color:#fff;padding:10px 20px 18px}
+.header h1{margin:0;font-size:22px;font-weight:700}
+.header p{margin:2px 0 0;font-size:13px;opacity:.9}
+.scroll{flex:1;overflow-y:auto;padding:16px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.metric{background:var(--card);border-radius:14px;padding:10px 14px;border-left:4px solid var(--red)}
+.metric small{display:block;color:var(--muted);font-size:12px}
+.metric b{font-size:22px}
+.label{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:0 0 8px}
+.card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.name{font-weight:700}
+.loc{color:var(--muted);font-size:13px}
+.pill{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;display:inline-block}
+.ok{background:var(--ok-bg);color:var(--ok)}
+.warn{background:var(--warn-bg);color:var(--warn)}
+.bad{background:var(--bad-bg);color:var(--bad)}
+.pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.urg{display:inline-block;background:var(--red);color:#fff;font-size:12px;font-weight:700;border-radius:6px;padding:1px 8px;margin-right:6px}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.admin-badge{background:#fff;color:var(--red);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:4px 10px;border-radius:999px;white-space:nowrap;margin-top:2px}
+@media (max-width:430px){body{background:var(--page)}.phone{width:100%;height:100vh;border:0;border-radius:0}.notch{display:none}}
+</style>
+</head>
+<body>
+<div class="phone">
+<div class="notch"></div>
+<div class="status"><span>9:41</span><span>5G ▮▮▮</span></div>
+<div class="header">
+<div class="header-top">
+<h1>Disaster Relief</h1>
+<span class="admin-badge">Admin view</span>
+</div>
+<p>Requests served by urgency</p>
+</div>
+<div class="scroll">
+<div class="metrics" id="pool"></div>
+<p class="label">Dispatch results</p>
+<div id="list"></div>
+</div>
+</div>
+<script>
+var requests=[
+{id:1,name:"Maria",urgency:5,location:"Northside",needs:{food:2,shelter:1,transport:1,medical:0}},
+{id:2,name:"Luis",urgency:4,location:"River Park",needs:{food:1,shelter:2,transport:0,medical:0}},
+{id:3,name:"Ivy",urgency:3,location:"West End",needs:{food:1,shelter:1,transport:1,medical:0}},
+{id:4,name:"David",urgency:2,location:"Old Town",needs:{food:2,shelter:0,transport:1,medical:0}}];
+var resources=[
+{type:"food",available:4,label:"Food kits"},
+{type:"shelter",available:3,label:"Shelter beds"},
+{type:"transport",available:2,label:"Transport vans"},
+{type:"responder",available:5,label:"Responders"}];
+var pool={};resources.forEach(function(r){pool[r.type]=r.available});
+var out=requests.slice().sort(function(a,b){return b.urgency-a.urgency}).map(function(req){
+var assigned={};
+Object.keys(req.needs).forEach(function(k){var q=req.needs[k];if(q<=0)return;var av=pool[k]||0;var u=Math.min(q,av);assigned[k]=u;pool[k]=av-u});
+var any=Object.keys(assigned).some(function(k){return assigned[k]>0});
+return {name:req.name,urgency:req.urgency,location:req.location,needs:req.needs,assigned:assigned,status:any?"dispatched":"pending"}});
+document.getElementById("pool").innerHTML=resources.map(function(r){return '<div class="metric"><small>'+r.label+'</small><b>'+r.available+'</b></div>'}).join("");
+document.getElementById("list").innerHTML=out.map(function(i){
+var pills=Object.keys(i.needs).filter(function(k){return i.needs[k]>0}).map(function(k){
+var a=i.assigned[k]||0,q=i.needs[k];var c=a>=q?"ok":a>0?"warn":"bad";
+return '<span class="pill '+c+'">'+k+' '+a+'/'+q+'</span>'}).join("");
+return '<div class="card"><div class="row"><div><div class="name"><span class="urg">'+i.urgency+'</span>'+i.name+'</div><div class="loc">'+i.location+'</div></div><span class="pill '+(i.status==="dispatched"?"ok":"bad")+'">'+i.status+'</span></div><div class="pills">'+pills+'</div></div>'}).join("");
+</script>
+</body>
+</html>
